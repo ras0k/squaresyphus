@@ -17,8 +17,9 @@ class DebugSlider:
         slider_pos = self.rect.x + int((self.value - self.min_value) / (self.max_value - self.min_value) * self.rect.width)
         pygame.draw.rect(screen, (100, 100, 100), (slider_pos - 5, self.rect.y, 10, self.rect.height))
         
-        # Draw label and value
-        label_text = self.font.render(f"{self.label}: {int(self.value)}", True, (0, 0, 0))
+        # Draw label and value with 2 decimal places for values less than 1
+        value_str = str(int(self.value)) if self.value >= 1 else f"{self.value:.2f}"
+        label_text = self.font.render(f"{self.label}: {value_str}", True, (0, 0, 0))
         screen.blit(label_text, (self.rect.x, self.rect.y + 25))
 
     def handle_event(self, event):
@@ -60,19 +61,24 @@ class Game:
         self.space.gravity = (0, 900)
 
         # Debug sliders
-        self.jump_force_slider = DebugSlider(10, 10, 200, 20, 1000, 5000, 2000, "Jump Force")
-        self.strength_slider = DebugSlider(10, 60, 200, 20, 10, 500, 120, "Strength")
+        self.jump_force_slider = DebugSlider(10, 10, 200, 20, 1000, 5000, 3000, "Jump Force")
+        self.strength_slider = DebugSlider(10, 60, 200, 20, 10, 500, 36, "Strength")
         self.boulder_radius_slider = DebugSlider(10, 110, 200, 20, 10, 120, 40, "Boulder Radius")
+        self.friction_slider = DebugSlider(10, 160, 200, 20, 0, 1.0, 0.6, "Friction")
 
         # Buttons
-        self.spawn_boulder_button = Button(10, 160, 150, 30, "Spawn Boulder", self.spawn_boulder)
-        self.clear_boulders_button = Button(170, 160, 150, 30, "Clear Boulders", self.clear_boulders)
+        self.spawn_boulder_button = Button(10, 210, 150, 30, "Spawn Boulder", self.spawn_boulder)
+        self.clear_boulders_button = Button(170, 210, 150, 30, "Clear Boulders", self.clear_boulders)
 
         self.sisyphus = self.create_sisyphus()
         self.boulders = []
         self.ground = self.create_ground()
         self.walls = self.create_walls()
         self.hill = self.create_hill()
+        
+        self.hill_light_color = (255, 255, 0)  # Bright yellow
+        self.hill_dark_color = (200, 200, 0)  # Darker yellow
+        self.current_hill_color = self.hill_dark_color
 
         self.clock = pygame.time.Clock()
         self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
@@ -87,7 +93,7 @@ class Game:
         sisyphus_body = pymunk.Body(sisyphus_mass, sisyphus_moment)
         sisyphus_body.position = 400, self.height - sisyphus_size/2
         sisyphus_shape = pymunk.Poly.create_box(sisyphus_body, (sisyphus_size, sisyphus_size))
-        sisyphus_shape.friction = 0.7  # Reduced friction
+        sisyphus_shape.friction = self.friction_slider.value
         self.space.add(sisyphus_body, sisyphus_shape)
         return sisyphus_body
 
@@ -96,9 +102,10 @@ class Game:
         boulder_mass = boulder_radius * 0.5  # Mass is now proportional to radius
         boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, boulder_radius)
         boulder_body = pymunk.Body(boulder_mass, boulder_moment)
-        boulder_body.position = 450, 300  # Spawn a little to the right
+        # Spawn above the hill center
+        boulder_body.position = self.width * 4.35 // 8, self.height - 250
         boulder_shape = pymunk.Circle(boulder_body, boulder_radius)
-        boulder_shape.friction = 0.5  # Reduced friction
+        boulder_shape.friction = self.friction_slider.value
         self.space.add(boulder_body, boulder_shape)
         return boulder_body, boulder_shape
 
@@ -114,7 +121,7 @@ class Game:
     def create_ground(self):
         ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
         ground_shape = pymunk.Segment(ground_body, (0, self.height), (self.width, self.height), 5)
-        ground_shape.friction = 0.7  # Reduced friction
+        ground_shape.friction = self.friction_slider.value
         self.space.add(ground_body, ground_shape)
         return ground_body
 
@@ -134,7 +141,7 @@ class Game:
         top_wall_shape = pymunk.Segment(wall_body, (0, 0), (self.width, 0), wall_thickness)
         
         for wall in [left_wall_shape, right_wall_shape, top_wall_shape]:
-            wall.friction = 0.7  # Reduced friction
+            wall.friction = self.friction_slider.value
             self.space.add(wall)
             walls.append(wall)
         
@@ -154,7 +161,7 @@ class Game:
         hill_shapes = []
         for i in range(len(hill_points) - 1):
             segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
-            segment.friction = 0.  # Reduced friction for the hill
+            segment.friction = self.friction_slider.value
             hill_shapes.append(segment)
         
         self.space.add(hill_body, *hill_shapes)
@@ -164,12 +171,13 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            elif event.type == pygame.KEYDOWN and (event.key == pygame.K_SPACE or event.key == pygame.K_w or event.key == pygame.K_UP):
                 self.jump()
             # Debug sliders event handling
             self.jump_force_slider.handle_event(event)
             self.strength_slider.handle_event(event)
             self.boulder_radius_slider.handle_event(event)
+            self.friction_slider.handle_event(event)
             # Button event handling
             self.spawn_boulder_button.handle_event(event)
             self.clear_boulders_button.handle_event(event)
@@ -179,22 +187,33 @@ class Game:
         keys = pygame.key.get_pressed()
         base_move_force = 100  # Base movement force
         strength = self.strength_slider.value
+        
+        # Scale sisyphus based on strength
+        scale_factor = 1 + (strength - 36) / 500  # 36 is initial strength
+        for shape in self.space.shapes:
+            if shape.body == self.sisyphus:
+                current_size = shape.get_vertices()[2][0] - shape.get_vertices()[0][0]
+                target_size = 50 * scale_factor
+                if abs(current_size - target_size) > 1:
+                    self.space.remove(shape)
+                    new_shape = pymunk.Poly.create_box(self.sisyphus, (50 * scale_factor, 50 * scale_factor))
+                    new_shape.friction = self.friction_slider.value
+                    self.space.add(new_shape)
                
-        if keys[pygame.K_LEFT]:
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             move_force = -base_move_force
             # Apply additional force based on strength when pushing boulders
             for boulder, _ in self.boulders:
                 if self.sisyphus.position.x > boulder.position.x:
                     move_force -= strength
             self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
-        if keys[pygame.K_RIGHT]:
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             move_force = base_move_force
             # Apply additional force based on strength when pushing boulders
             for boulder, _ in self.boulders:
                 if self.sisyphus.position.x < boulder.position.x:
                     move_force += strength
             self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
-
 
     def jump(self):
         if self.jump_cooldown <= 0:
@@ -216,11 +235,36 @@ class Game:
             self.move_sisyphus()
             self.update_camera()
 
+            # Update friction for all objects when friction slider changes
+            for boulder_body, boulder_shape in self.boulders:
+                boulder_shape.friction = self.friction_slider.value
+            for wall in self.walls:
+                wall.friction = self.friction_slider.value
+            for shape in self.space.shapes:
+                if isinstance(shape, pymunk.Segment):
+                    shape.friction = self.friction_slider.value
+
+            # Check if any boulder is in the detection area
+            hill_top_x = self.width * 4.35 // 8
+            hill_top_y = self.height - 170  # Moved up by 50 pixels
+            boulder_detected = False
+            for boulder, _ in self.boulders:
+                if (hill_top_x - 50 < boulder.position.x < hill_top_x + 50 and 
+                    hill_top_y - 50 < boulder.position.y < hill_top_y + 50):
+                    boulder_detected = True
+                    break
+            
+            self.current_hill_color = self.hill_light_color if boulder_detected else self.hill_dark_color
+
             if self.jump_cooldown > 0:
                 self.jump_cooldown -= 1
 
             self.screen.fill((255, 255, 255))
             self.space.step(1/60.0)
+            
+            # Draw detection area (twice as tall)
+            hill_top_rect = pygame.Rect(hill_top_x - 25 - self.camera_x, hill_top_y - 50, 50, 100)
+            pygame.draw.rect(self.screen, self.current_hill_color, hill_top_rect)
             
             # Translate all drawing operations by the negative of the camera position
             self.draw_options.transform = pymunk.Transform(tx=-self.camera_x, ty=0)
@@ -233,6 +277,7 @@ class Game:
             self.jump_force_slider.draw(self.screen)
             self.strength_slider.draw(self.screen)
             self.boulder_radius_slider.draw(self.screen)
+            self.friction_slider.draw(self.screen)
             
             # Draw buttons
             self.spawn_boulder_button.draw(self.screen)
