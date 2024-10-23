@@ -161,7 +161,7 @@ class Game:
         hill_shapes = []
         for i in range(len(hill_points) - 1):
             segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
-            segment.friction = 0.7  # Reduced friction for the hill
+            segment.friction = 0.4  # Reduced friction for the hill
             hill_shapes.append(segment)
         
         self.space.add(hill_body, *hill_shapes)
