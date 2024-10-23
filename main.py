@@ -31,6 +31,24 @@ class DebugSlider:
             self.value = max(self.min_value, min(self.max_value, 
                 self.min_value + (event.pos[0] - self.rect.x) / self.rect.width * (self.max_value - self.min_value)))
 
+class Button:
+    def __init__(self, x, y, width, height, text, callback):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.text = text
+        self.callback = callback
+        self.font = pygame.font.Font(None, 24)
+
+    def draw(self, screen):
+        pygame.draw.rect(screen, (150, 150, 150), self.rect)
+        text_surface = self.font.render(self.text, True, (0, 0, 0))
+        text_rect = text_surface.get_rect(center=self.rect.center)
+        screen.blit(text_surface, text_rect)
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.rect.collidepoint(event.pos):
+                self.callback()
+
 class Game:
     def __init__(self):
         pygame.init()
@@ -42,12 +60,16 @@ class Game:
         self.space.gravity = (0, 900)
 
         # Debug sliders
-        self.jump_force_slider = DebugSlider(10, 10, 200, 20, 100, 5000, 500, "Jump Force")
-        self.move_force_slider = DebugSlider(10, 60, 200, 20, 10, 500, 80, "Move Force")
-        self.boulder_radius_slider = DebugSlider(10, 110, 200, 20, 10, 100, 30, "Boulder Radius")
+        self.jump_force_slider = DebugSlider(10, 10, 200, 20, 1000, 5000, 2000, "Jump Force")
+        self.strength_slider = DebugSlider(10, 60, 200, 20, 10, 500, 120, "Strength")
+        self.boulder_radius_slider = DebugSlider(10, 110, 200, 20, 10, 120, 40, "Boulder Radius")
+
+        # Buttons
+        self.spawn_boulder_button = Button(10, 160, 150, 30, "Spawn Boulder", self.spawn_boulder)
+        self.clear_boulders_button = Button(170, 160, 150, 30, "Clear Boulders", self.clear_boulders)
 
         self.sisyphus = self.create_sisyphus()
-        self.boulder = self.create_boulder()
+        self.boulders = []
         self.ground = self.create_ground()
         self.walls = self.create_walls()
         self.hill = self.create_hill()
@@ -70,14 +92,23 @@ class Game:
 
     def create_boulder(self):
         boulder_radius = self.boulder_radius_slider.value
-        boulder_mass = 5
+        boulder_mass = boulder_radius * 0.5  # Mass is now proportional to radius
         boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, boulder_radius)
         boulder_body = pymunk.Body(boulder_mass, boulder_moment)
         boulder_body.position = 450, 300  # Spawn a little to the right
-        boulder_shape = pymunk.Circle(boulder_body, boulder_radius + 5)  # Make it slightly bigger
+        boulder_shape = pymunk.Circle(boulder_body, boulder_radius)
         boulder_shape.friction = 0.5  # Reduced friction
         self.space.add(boulder_body, boulder_shape)
-        return boulder_body
+        return boulder_body, boulder_shape
+
+    def spawn_boulder(self):
+        boulder_body, boulder_shape = self.create_boulder()
+        self.boulders.append((boulder_body, boulder_shape))
+
+    def clear_boulders(self):
+        for boulder_body, boulder_shape in self.boulders:
+            self.space.remove(boulder_body, boulder_shape)
+        self.boulders.clear()
 
     def create_ground(self):
         ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
@@ -123,16 +154,31 @@ class Game:
                 self.jump()
             # Debug sliders event handling
             self.jump_force_slider.handle_event(event)
-            self.move_force_slider.handle_event(event)
+            self.strength_slider.handle_event(event)
             self.boulder_radius_slider.handle_event(event)
+            # Button event handling
+            self.spawn_boulder_button.handle_event(event)
+            self.clear_boulders_button.handle_event(event)
         return True
 
     def move_sisyphus(self):
         keys = pygame.key.get_pressed()
-        move_force = self.move_force_slider.value
+        base_move_force = 150  # Base movement force
+        strength = self.strength_slider.value
+        
         if keys[pygame.K_LEFT]:
-            self.sisyphus.apply_impulse_at_world_point((-move_force, 0), self.sisyphus.position)
+            move_force = -base_move_force
+            # Apply additional force based on strength when pushing boulders
+            for boulder, _ in self.boulders:
+                if self.sisyphus.position.x > boulder.position.x:
+                    move_force -= strength
+            self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
         if keys[pygame.K_RIGHT]:
+            move_force = base_move_force
+            # Apply additional force based on strength when pushing boulders
+            for boulder, _ in self.boulders:
+                if self.sisyphus.position.x < boulder.position.x:
+                    move_force += strength
             self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
 
     def jump(self):
@@ -157,8 +203,12 @@ class Game:
             
             # Draw debug sliders
             self.jump_force_slider.draw(self.screen)
-            self.move_force_slider.draw(self.screen)
+            self.strength_slider.draw(self.screen)
             self.boulder_radius_slider.draw(self.screen)
+            
+            # Draw buttons
+            self.spawn_boulder_button.draw(self.screen)
+            self.clear_boulders_button.draw(self.screen)
             
             pygame.display.flip()
             self.clock.tick(60)
