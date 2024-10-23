@@ -2,6 +2,29 @@ import pygame
 import pymunk
 import pymunk.pygame_util
 
+class DebugSlider:
+    def __init__(self, x, y, width, height, min_value, max_value, initial_value):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.min_value = min_value
+        self.max_value = max_value
+        self.value = initial_value
+        self.dragging = False
+
+    def draw(self, screen):
+        pygame.draw.rect(screen, (200, 200, 200), self.rect)
+        slider_pos = self.rect.x + int((self.value - self.min_value) / (self.max_value - self.min_value) * self.rect.width)
+        pygame.draw.rect(screen, (100, 100, 100), (slider_pos - 5, self.rect.y, 10, self.rect.height))
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.rect.collidepoint(event.pos):
+                self.dragging = True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.dragging = False
+        elif event.type == pygame.MOUSEMOTION and self.dragging:
+            self.value = max(self.min_value, min(self.max_value, 
+                self.min_value + (event.pos[0] - self.rect.x) / self.rect.width * (self.max_value - self.min_value)))
+
 class Game:
     def __init__(self):
         pygame.init()
@@ -22,6 +45,9 @@ class Game:
         self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
 
         self.jump_cooldown = 0
+        
+        # Debug slider for jump force
+        self.debug_slider = DebugSlider(10, 10, 200, 20, 100, 5000, 500)
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -87,6 +113,8 @@ class Game:
                 return False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                 self.jump()
+            # Debug slider event handling
+            self.debug_slider.handle_event(event)
         return True
 
     def move_sisyphus(self):
@@ -100,7 +128,7 @@ class Game:
     def jump(self):
         if self.jump_cooldown <= 0:
             # Apply jump force in world coordinates (always upwards)
-            jump_force = (0, -500)
+            jump_force = (0, -self.debug_slider.value)  # Use the debug slider value
             self.sisyphus.apply_impulse_at_world_point(jump_force, self.sisyphus.position)
             self.jump_cooldown = 30  # Set cooldown to 30 frames (0.5 seconds at 60 FPS)
 
@@ -116,6 +144,10 @@ class Game:
             self.screen.fill((255, 255, 255))
             self.space.step(1/60.0)
             self.space.debug_draw(self.draw_options)
+            
+            # Draw debug slider
+            self.debug_slider.draw(self.screen)
+            
             pygame.display.flip()
             self.clock.tick(60)
 
