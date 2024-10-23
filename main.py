@@ -41,6 +41,11 @@ class Game:
         self.space = pymunk.Space()
         self.space.gravity = (0, 900)
 
+        # Debug sliders
+        self.jump_force_slider = DebugSlider(10, 10, 200, 20, 100, 5000, 500, "Jump Force")
+        self.move_force_slider = DebugSlider(10, 60, 200, 20, 10, 500, 80, "Move Force")
+        self.boulder_radius_slider = DebugSlider(10, 110, 200, 20, 10, 100, 30, "Boulder Radius")
+
         self.sisyphus = self.create_sisyphus()
         self.boulder = self.create_boulder()
         self.ground = self.create_ground()
@@ -51,9 +56,6 @@ class Game:
         self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
 
         self.jump_cooldown = 0
-        
-        # Debug slider for jump force
-        self.debug_slider = DebugSlider(10, 10, 200, 20, 100, 5000, 500, "Jump Force")
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -67,7 +69,7 @@ class Game:
         return sisyphus_body
 
     def create_boulder(self):
-        boulder_radius = 30
+        boulder_radius = self.boulder_radius_slider.value
         boulder_mass = 5
         boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, boulder_radius)
         boulder_body = pymunk.Body(boulder_mass, boulder_moment)
@@ -119,13 +121,15 @@ class Game:
                 return False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                 self.jump()
-            # Debug slider event handling
-            self.debug_slider.handle_event(event)
+            # Debug sliders event handling
+            self.jump_force_slider.handle_event(event)
+            self.move_force_slider.handle_event(event)
+            self.boulder_radius_slider.handle_event(event)
         return True
 
     def move_sisyphus(self):
         keys = pygame.key.get_pressed()
-        move_force = 80 # Reduced from 500 to make movement slower
+        move_force = self.move_force_slider.value
         if keys[pygame.K_LEFT]:
             self.sisyphus.apply_impulse_at_world_point((-move_force, 0), self.sisyphus.position)
         if keys[pygame.K_RIGHT]:
@@ -134,7 +138,7 @@ class Game:
     def jump(self):
         if self.jump_cooldown <= 0:
             # Apply jump force in world coordinates (always upwards)
-            jump_force = (0, -self.debug_slider.value)  # Use the debug slider value
+            jump_force = (0, -self.jump_force_slider.value)
             self.sisyphus.apply_impulse_at_world_point(jump_force, self.sisyphus.position)
             self.jump_cooldown = 30  # Set cooldown to 30 frames (0.5 seconds at 60 FPS)
 
@@ -151,8 +155,10 @@ class Game:
             self.space.step(1/60.0)
             self.space.debug_draw(self.draw_options)
             
-            # Draw debug slider
-            self.debug_slider.draw(self.screen)
+            # Draw debug sliders
+            self.jump_force_slider.draw(self.screen)
+            self.move_force_slider.draw(self.screen)
+            self.boulder_radius_slider.draw(self.screen)
             
             pygame.display.flip()
             self.clock.tick(60)
