@@ -85,6 +85,8 @@ class Game:
 
         self.jump_cooldown = 0
         self.camera_x = 0
+        self.is_grounded = False  # Track if player is touching ground
+        self.font = pygame.font.Font(None, 24)  # Font for debug text
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -94,6 +96,22 @@ class Game:
         sisyphus_body.position = 400, self.height - sisyphus_size/2
         sisyphus_shape = pymunk.Poly.create_box(sisyphus_body, (sisyphus_size, sisyphus_size))
         sisyphus_shape.friction = self.friction_slider.value
+        
+        # Add collision handler to detect ground contact
+        def begin_collision(arbiter, space, data):
+            self.is_grounded = True
+            return True
+            
+        def separate_collision(arbiter, space, data):
+            self.is_grounded = False
+            return True
+            
+        handler = self.space.add_collision_handler(1, 2)  # 1 for sisyphus, 2 for ground/platforms
+        handler.begin = begin_collision
+        handler.separate = separate_collision
+        
+        sisyphus_shape.collision_type = 1  # Set collision type for sisyphus
+        
         self.space.add(sisyphus_body, sisyphus_shape)
         return sisyphus_body
 
@@ -122,6 +140,7 @@ class Game:
         ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
         ground_shape = pymunk.Segment(ground_body, (0, self.height), (self.width, self.height), 5)
         ground_shape.friction = self.friction_slider.value
+        ground_shape.collision_type = 2  # Set collision type for ground
         self.space.add(ground_body, ground_shape)
         return ground_body
 
@@ -142,6 +161,7 @@ class Game:
         
         for wall in [left_wall_shape, right_wall_shape, top_wall_shape]:
             wall.friction = self.friction_slider.value
+            wall.collision_type = 2  # Set collision type for walls
             self.space.add(wall)
             walls.append(wall)
         
@@ -162,6 +182,7 @@ class Game:
         for i in range(len(hill_points) - 1):
             segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
             segment.friction = self.friction_slider.value
+            segment.collision_type = 2  # Set collision type for hill
             hill_shapes.append(segment)
         
         self.space.add(hill_body, *hill_shapes)
@@ -171,8 +192,6 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
-            elif event.type == pygame.KEYDOWN and (event.key == pygame.K_SPACE or event.key == pygame.K_w or event.key == pygame.K_UP):
-                self.jump()
             # Debug sliders event handling
             self.jump_force_slider.handle_event(event)
             self.strength_slider.handle_event(event)
@@ -181,6 +200,14 @@ class Game:
             # Button event handling
             self.spawn_boulder_button.handle_event(event)
             self.clear_boulders_button.handle_event(event)
+        
+        # Handle continuous jumping when key is held
+        keys = pygame.key.get_pressed()
+        if (keys[pygame.K_SPACE] or keys[pygame.K_w] or keys[pygame.K_UP]) and self.jump_cooldown <= 0 and self.is_grounded:
+            self.jump()
+            self.jump_cooldown = 50  # Set cooldown after jumping
+            self.is_grounded = False  # Immediately set grounded to false when jumping
+        
         return True
 
     def move_sisyphus(self):
@@ -198,6 +225,7 @@ class Game:
                     self.space.remove(shape)
                     new_shape = pymunk.Poly.create_box(self.sisyphus, (50 * scale_factor, 50 * scale_factor))
                     new_shape.friction = self.friction_slider.value
+                    new_shape.collision_type = 1  # Set collision type for resized sisyphus
                     self.space.add(new_shape)
                
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
@@ -216,11 +244,9 @@ class Game:
             self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
 
     def jump(self):
-        if self.jump_cooldown <= 0:
-            # Apply jump force in world coordinates (always upwards)
-            jump_force = (0, -self.jump_force_slider.value)
-            self.sisyphus.apply_impulse_at_world_point(jump_force, self.sisyphus.position)
-            self.jump_cooldown = 30  # Set cooldown to 30 frames (0.5 seconds at 60 FPS)
+        # Apply jump force in world coordinates (always upwards)
+        jump_force = (0, -self.jump_force_slider.value)
+        self.sisyphus.apply_impulse_at_world_point(jump_force, self.sisyphus.position)
 
     def update_camera(self):
         # Update camera position based on Sisyphus's position
@@ -256,12 +282,20 @@ class Game:
             
             self.current_hill_color = self.hill_light_color if boulder_detected else self.hill_dark_color
 
+            # Update jump cooldown
             if self.jump_cooldown > 0:
                 self.jump_cooldown -= 1
 
             self.screen.fill((255, 255, 255))
             self.space.step(1/60.0)
             
+            # Add debug text for is_grounded and jump_cooldown
+            grounded_text = self.font.render(f"Grounded: {self.is_grounded}", True, (0, 0, 0))
+            cooldown_text = self.font.render(f"Jump Cooldown: {self.jump_cooldown}", True, (0, 0, 0))
+            self.screen.blit(grounded_text, (10, 260))
+            self.screen.blit(cooldown_text, (10, 285))
+
+
             # Draw detection area (twice as tall)
             hill_top_rect = pygame.Rect(hill_top_x - 25 - self.camera_x, hill_top_y - 50, 50, 100)
             pygame.draw.rect(self.screen, self.current_hill_color, hill_top_rect)
