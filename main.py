@@ -1,7 +1,6 @@
 import pygame
 import pymunk
 import pymunk.pygame_util
-import math
 
 class DebugSlider:
     def __init__(self, x, y, width, height, min_value, max_value, initial_value, label):
@@ -81,12 +80,6 @@ class Game:
         self.jump_cooldown = 0
         self.camera_x = 0
 
-        # Debug info
-        self.force_x = 0
-        self.force_y = 0
-        self.slope_angle = 0
-        self.debug_font = pygame.font.Font(None, 24)
-
     def create_sisyphus(self):
         sisyphus_size = 50
         sisyphus_mass = 10
@@ -161,7 +154,7 @@ class Game:
         hill_shapes = []
         for i in range(len(hill_points) - 1):
             segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
-            segment.friction = 0.4  # Reduced friction for the hill
+            segment.friction = 0.  # Reduced friction for the hill
             hill_shapes.append(segment)
         
         self.space.add(hill_body, *hill_shapes)
@@ -186,47 +179,22 @@ class Game:
         keys = pygame.key.get_pressed()
         base_move_force = 100  # Base movement force
         strength = self.strength_slider.value
-        
-        # Get the slope under Sisyphus
-        self.slope_angle = self.get_slope_angle()
-        
+               
         if keys[pygame.K_LEFT]:
             move_force = -base_move_force
             # Apply additional force based on strength when pushing boulders
             for boulder, _ in self.boulders:
                 if self.sisyphus.position.x > boulder.position.x:
                     move_force -= strength
-            # Apply the force at an angle based on the slope
-            self.force_x = move_force * math.cos(self.slope_angle)
-            self.force_y = move_force * math.sin(self.slope_angle)
-            self.sisyphus.apply_impulse_at_world_point((self.force_x, self.force_y), self.sisyphus.position)
-        elif keys[pygame.K_RIGHT]:
+            self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
+        if keys[pygame.K_RIGHT]:
             move_force = base_move_force
             # Apply additional force based on strength when pushing boulders
             for boulder, _ in self.boulders:
                 if self.sisyphus.position.x < boulder.position.x:
                     move_force += strength
-            # Apply the force at an angle based on the slope
-            self.force_x = move_force * math.cos(self.slope_angle)
-            self.force_y = move_force * math.sin(self.slope_angle)
-            self.sisyphus.apply_impulse_at_world_point((self.force_x, self.force_y), self.sisyphus.position)
-        else:
-            self.force_x = 0
-            self.force_y = 0
+            self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
 
-    def get_slope_angle(self):
-        # Perform a shape query to find the ground shape under Sisyphus
-        query = self.space.shape_query(list(self.sisyphus.shapes)[0])
-        if query:
-            # Get the first shape (assuming it's the ground or hill)
-            ground_shape = query[0].shape
-            if isinstance(ground_shape, pymunk.Segment):
-                # Calculate the angle of the segment
-                dx = ground_shape.b.x - ground_shape.a.x
-                dy = ground_shape.b.y - ground_shape.a.y
-                return math.atan2(dy, dx)
-        # If no ground is found or it's not a segment, return 0 (flat ground)
-        return 0
 
     def jump(self):
         if self.jump_cooldown <= 0:
@@ -269,12 +237,6 @@ class Game:
             # Draw buttons
             self.spawn_boulder_button.draw(self.screen)
             self.clear_boulders_button.draw(self.screen)
-            
-            # Draw force components and slope angle
-            force_text = self.debug_font.render(f"Force X: {self.force_x:.2f}, Force Y: {self.force_y:.2f}", True, (0, 0, 0))
-            self.screen.blit(force_text, (10, 200))
-            slope_text = self.debug_font.render(f"Slope Angle: {math.degrees(self.slope_angle):.2f}°", True, (0, 0, 0))
-            self.screen.blit(slope_text, (10, 230))
             
             pygame.display.flip()
             self.clock.tick(60)
