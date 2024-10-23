@@ -3,17 +3,23 @@ import pymunk
 import pymunk.pygame_util
 
 class DebugSlider:
-    def __init__(self, x, y, width, height, min_value, max_value, initial_value):
+    def __init__(self, x, y, width, height, min_value, max_value, initial_value, label):
         self.rect = pygame.Rect(x, y, width, height)
         self.min_value = min_value
         self.max_value = max_value
         self.value = initial_value
         self.dragging = False
+        self.label = label
+        self.font = pygame.font.Font(None, 24)
 
     def draw(self, screen):
         pygame.draw.rect(screen, (200, 200, 200), self.rect)
         slider_pos = self.rect.x + int((self.value - self.min_value) / (self.max_value - self.min_value) * self.rect.width)
         pygame.draw.rect(screen, (100, 100, 100), (slider_pos - 5, self.rect.y, 10, self.rect.height))
+        
+        # Draw label and value
+        label_text = self.font.render(f"{self.label}: {int(self.value)}", True, (0, 0, 0))
+        screen.blit(label_text, (self.rect.x, self.rect.y + 25))
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -47,7 +53,7 @@ class Game:
         self.jump_cooldown = 0
         
         # Debug slider for jump force
-        self.debug_slider = DebugSlider(10, 10, 200, 20, 100, 5000, 500)
+        self.debug_slider = DebugSlider(10, 10, 200, 20, 100, 5000, 500, "Jump Force")
 
     def create_sisyphus(self):
         sisyphus_size = 50
