@@ -2,74 +2,115 @@ import pygame
 import pymunk
 import pymunk.pygame_util
 
-# Initialize Pygame and create a window
-pygame.init()
-width, height = 800, 600
-screen = pygame.display.set_mode((width, height))
-pygame.display.set_caption("Sisyphus and the Boulder")
+class Game:
+    def __init__(self):
+        pygame.init()
+        self.width, self.height = 800, 600
+        self.screen = pygame.display.set_mode((self.width, self.height))
+        pygame.display.set_caption("Sisyphus and the Boulder")
 
-# Create a Pymunk space
-space = pymunk.Space()
-space.gravity = (0, 900)
+        self.space = pymunk.Space()
+        self.space.gravity = (0, 900)
 
-# Create Sisyphus (the square)
-sisyphus_size = 50
-sisyphus_mass = 10
-sisyphus_moment = pymunk.moment_for_box(sisyphus_mass, (sisyphus_size, sisyphus_size))
-sisyphus_body = pymunk.Body(sisyphus_mass, sisyphus_moment)
-sisyphus_body.position = 400, 500
-sisyphus_shape = pymunk.Poly.create_box(sisyphus_body, (sisyphus_size, sisyphus_size))
-sisyphus_shape.friction = 0.5
-space.add(sisyphus_body, sisyphus_shape)
+        self.sisyphus = self.create_sisyphus()
+        self.boulder = self.create_boulder()
+        self.ground = self.create_ground()
+        self.walls = self.create_walls()
 
-# Create the boulder (the circle)
-boulder_radius = 30
-boulder_mass = 5
-boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, boulder_radius)
-boulder_body = pymunk.Body(boulder_mass, boulder_moment)
-boulder_body.position = 400, 300
-boulder_shape = pymunk.Circle(boulder_body, boulder_radius)
-boulder_shape.friction = 0.3
-space.add(boulder_body, boulder_shape)
+        self.clock = pygame.time.Clock()
+        self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
 
-# Create the ground
-ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-ground_shape = pymunk.Segment(ground_body, (0, height), (width, height), 5)
-ground_shape.friction = 0.5
-space.add(ground_body, ground_shape)
+        self.jump_cooldown = 0
 
-# Set up the game loop
-clock = pygame.time.Clock()
-draw_options = pymunk.pygame_util.DrawOptions(screen)
+    def create_sisyphus(self):
+        sisyphus_size = 50
+        sisyphus_mass = 10
+        sisyphus_moment = pymunk.moment_for_box(sisyphus_mass, (sisyphus_size, sisyphus_size))
+        sisyphus_body = pymunk.Body(sisyphus_mass, sisyphus_moment)
+        sisyphus_body.position = 400, self.height - sisyphus_size/2
+        sisyphus_shape = pymunk.Poly.create_box(sisyphus_body, (sisyphus_size, sisyphus_size))
+        sisyphus_shape.friction = 0.5
+        self.space.add(sisyphus_body, sisyphus_shape)
+        return sisyphus_body
 
-running = True
-while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
+    def create_boulder(self):
+        boulder_radius = 30
+        boulder_mass = 5
+        boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, boulder_radius)
+        boulder_body = pymunk.Body(boulder_mass, boulder_moment)
+        boulder_body.position = 450, 300  # Spawn a little to the right
+        boulder_shape = pymunk.Circle(boulder_body, boulder_radius + 5)  # Make it slightly bigger
+        boulder_shape.friction = 0.3
+        self.space.add(boulder_body, boulder_shape)
+        return boulder_body
 
-    # Move Sisyphus
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_LEFT]:
-        sisyphus_body.apply_impulse_at_local_point((-500, 0))
-    if keys[pygame.K_RIGHT]:
-        sisyphus_body.apply_impulse_at_local_point((500, 0))
-    if keys[pygame.K_UP] and sisyphus_body.position.y >= height - sisyphus_size/2 - 1:
-        sisyphus_body.apply_impulse_at_local_point((0, -5000))
+    def create_ground(self):
+        ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        ground_shape = pymunk.Segment(ground_body, (0, self.height), (self.width, self.height), 5)
+        ground_shape.friction = 0.5
+        self.space.add(ground_body, ground_shape)
+        return ground_body
 
-    # Clear the screen
-    screen.fill((255, 255, 255))
+    def create_walls(self):
+        walls = []
+        wall_body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        wall_thickness = 5
+        
+        # Add the wall body to the space first
+        self.space.add(wall_body)
+        
+        # Left wall
+        left_wall_shape = pymunk.Segment(wall_body, (0, 0), (0, self.height), wall_thickness)
+        # Right wall
+        right_wall_shape = pymunk.Segment(wall_body, (self.width, 0), (self.width, self.height), wall_thickness)
+        # Top wall
+        top_wall_shape = pymunk.Segment(wall_body, (0, 0), (self.width, 0), wall_thickness)
+        
+        for wall in [left_wall_shape, right_wall_shape, top_wall_shape]:
+            wall.friction = 0.5
+            self.space.add(wall)
+            walls.append(wall)
+        
+        return walls
 
-    # Update the physics
-    space.step(1/60.0)
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                self.jump()
+        return True
 
-    # Draw everything
-    space.debug_draw(draw_options)
+    def move_sisyphus(self):
+        keys = pygame.key.get_pressed()
+        move_force = 120 # Reduced from 500 to make movement slower
+        if keys[pygame.K_LEFT]:
+            self.sisyphus.apply_impulse_at_local_point((-move_force, 0))
+        if keys[pygame.K_RIGHT]:
+            self.sisyphus.apply_impulse_at_local_point((move_force, 0))
 
-    # Update the display
-    pygame.display.flip()
+    def jump(self):
+        if self.jump_cooldown <= 0:
+            self.sisyphus.apply_impulse_at_local_point((0, -5000))
+            self.jump_cooldown = 30  # Set cooldown to 30 frames (0.5 seconds at 60 FPS)
 
-    # Control the frame rate
-    clock.tick(60)
+    def run(self):
+        running = True
+        while running:
+            running = self.handle_events()
+            self.move_sisyphus()
 
-pygame.quit()
+            if self.jump_cooldown > 0:
+                self.jump_cooldown -= 1
+
+            self.screen.fill((255, 255, 255))
+            self.space.step(1/60.0)
+            self.space.debug_draw(self.draw_options)
+            pygame.display.flip()
+            self.clock.tick(60)
+
+        pygame.quit()
+
+if __name__ == "__main__":
+    game = Game()
+    game.run()
