@@ -127,8 +127,9 @@ class Game:
         boulder_mass = boulder_radius * 0.5  # Mass is now proportional to radius
         boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, boulder_radius)
         boulder_body = pymunk.Body(boulder_mass, boulder_moment)
-        # Spawn above the hill center
-        boulder_body.position = self.width * 4.35 // 8, self.height - 250
+        
+        # Spawn left of the hill
+        boulder_body.position = self.width * .3 , self.height - 250
         boulder_shape = pymunk.Circle(boulder_body, boulder_radius)
         boulder_shape.friction = self.friction_slider.value
         self.space.add(boulder_body, boulder_shape)
@@ -270,12 +271,12 @@ class Game:
 
             # Update friction for all objects when friction slider changes
             for boulder_body, boulder_shape in self.boulders:
-                boulder_shape.friction = self.friction_slider.value
+                boulder_shape.friction = self.friction_slider.value *0.8
             for wall in self.walls:
                 wall.friction = self.friction_slider.value
             for shape in self.space.shapes:
                 if isinstance(shape, pymunk.Segment):
-                    shape.friction = self.friction_slider.value
+                    shape.friction = self.friction_slider.value * 0.8
 
             # Check if any boulder is in the detection area at the top
             hill_top_x = self.width * 4.35 // 8
