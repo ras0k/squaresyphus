@@ -79,6 +79,7 @@ class Game:
         self.hill_light_color = (255, 255, 0)  # Bright yellow
         self.hill_dark_color = (200, 200, 0)  # Darker yellow
         self.current_hill_color = self.hill_dark_color
+        self.bottom_sensor_color = (255, 200, 200)  # Light red for bottom sensors
 
         self.clock = pygame.time.Clock()
         self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
@@ -87,6 +88,12 @@ class Game:
         self.camera_x = 0
         self.is_grounded = False  # Track if player is touching ground
         self.font = pygame.font.Font(None, 24)  # Font for debug text
+        
+        # Add counter for hill passes and money
+        self.hill_passes = 0
+        self.money = 0
+        self.last_boulder_detected = False  # Track previous detection state
+        self.boulder_at_bottom = False  # Track if boulder has reached bottom
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -270,16 +277,36 @@ class Game:
                 if isinstance(shape, pymunk.Segment):
                     shape.friction = self.friction_slider.value
 
-            # Check if any boulder is in the detection area
+            # Check if any boulder is in the detection area at the top
             hill_top_x = self.width * 4.35 // 8
             hill_top_y = self.height - 170  # Moved up by 50 pixels
             boulder_detected = False
+            
+            # Define bottom sensor areas
+            left_sensor_x = self.width * 3 // 8
+            right_sensor_x = self.width * 5.7 // 8
+            sensor_y = self.height - 20
+            sensor_size = 50
+
             for boulder, _ in self.boulders:
+                # Check if boulder is at bottom sensors
+                if self.boulder_at_bottom or boulder.position.x < left_sensor_x or boulder.position.x > right_sensor_x:
+                    self.boulder_at_bottom = True
+                
+                # Check top sensor
                 if (hill_top_x - 50 < boulder.position.x < hill_top_x + 50 and 
                     hill_top_y - 50 < boulder.position.y < hill_top_y + 50):
                     boulder_detected = True
                     break
             
+            # Increment counter when boulder enters detection area
+            if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
+                self.hill_passes += 1
+                self.money += 1
+                self.strength_slider.value = min(self.strength_slider.value + 1, self.strength_slider.max_value)
+                self.boulder_at_bottom = False
+            
+            self.last_boulder_detected = boulder_detected
             self.current_hill_color = self.hill_light_color if boulder_detected else self.hill_dark_color
 
             # Update jump cooldown
@@ -288,13 +315,19 @@ class Game:
 
             self.screen.fill((255, 255, 255))
             self.space.step(1/60.0)
-            
+             
+            # Add money display
+            self.font = pygame.font.Font(None, 36)  # Font for money
+            money_text = self.font.render(f"$ {self.money}", True, (22,129,24))
+            self.screen.blit(money_text, (720, 24))
+
+            self.font = pygame.font.Font(None, 24)  # Font for debug text
+
             # Add debug text for is_grounded and jump_cooldown
             grounded_text = self.font.render(f"Grounded: {self.is_grounded}", True, (0, 0, 0))
             cooldown_text = self.font.render(f"Jump Cooldown: {self.jump_cooldown}", True, (0, 0, 0))
             self.screen.blit(grounded_text, (10, 260))
             self.screen.blit(cooldown_text, (10, 285))
-
 
             # Draw detection area (twice as tall)
             hill_top_rect = pygame.Rect(hill_top_x - 25 - self.camera_x, hill_top_y - 50, 50, 100)
