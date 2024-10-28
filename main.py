@@ -59,6 +59,8 @@ class Game:
 
         self.space = pymunk.Space()
         self.space.gravity = (0, 900)
+        # Set collision_slop to zero to prevent penetration
+        self.space.collision_slop = 0.0
 
         # Debug sliders
         self.jump_force_slider = DebugSlider(10, 10, 200, 20, 1000, 5000, 3000, "Jump Force")
@@ -71,8 +73,9 @@ class Game:
         self.clear_boulders_button = Button(170, 210, 150, 30, "Clear Boulders", self.clear_boulders)
 
         self.sisyphus = self.create_sisyphus()
-        self.boulders = []
-        self.ground = self.create_ground()
+        self.current_boulder = None
+        self.crushing_boulders = []
+        self.ground = self.create_ground_poly()
         self.walls = self.create_walls()
         self.hill = self.create_hill()
         
@@ -94,6 +97,23 @@ class Game:
         self.money = 0
         self.last_boulder_detected = False  # Track previous detection state
         self.boulder_at_bottom = False  # Track if boulder has reached bottom
+
+        # **Add Collision Handlers to Ignore Specific Collisions**
+        # Crushing Boulders (4) vs Player (1) - Ignore
+        handler_crushing_player = self.space.add_collision_handler(4, 1)
+        handler_crushing_player.begin = self.ignore_collision
+
+        # Crushing Boulders (4) vs Normal Boulders (3) - Ignore
+        handler_crushing_boulders = self.space.add_collision_handler(4, 3)
+        handler_crushing_boulders.begin = self.ignore_collision
+
+        # Crushing Boulders (4) vs Crushing Boulders (4) - Ignore
+        handler_crushing_crushing = self.space.add_collision_handler(4, 4)
+        handler_crushing_crushing.begin = self.ignore_collision
+
+    def ignore_collision(self, arbiter, space, data):
+        """Collision handler that ignores the collision."""
+        return False  # Returning False tells Pymunk to ignore the collision
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -132,21 +152,48 @@ class Game:
         boulder_body.position = self.width * .3 , self.height - 250
         boulder_shape = pymunk.Circle(boulder_body, boulder_radius)
         boulder_shape.friction = self.friction_slider.value
+        boulder_shape.color = pygame.Color('gray')  # Set default color
+        boulder_shape.collision_type = 3  # Collision type for normal boulders
         self.space.add(boulder_body, boulder_shape)
         return boulder_body, boulder_shape
 
     def spawn_boulder(self):
+        if self.current_boulder is not None:
+            # Initiate crushing of the existing boulder
+            self.crush_boulder(self.current_boulder)
+            self.current_boulder = None  # Clear current boulder
+
         boulder_body, boulder_shape = self.create_boulder()
-        self.boulders.append((boulder_body, boulder_shape))
+        new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
+        self.current_boulder = new_boulder
+
+    def crush_boulder(self, boulder):
+        # Change state to 'crushing'
+        boulder['state'] = 'crushing'
+        boulder['timer'] = 60  # Duration of the 'crushing' animation (1 second if 60 FPS)
+        # Set shape color to orange
+        boulder['shape'].color = pygame.Color('orange')
+        # Change collision type to 4 (crushing boulders)
+        boulder['shape'].collision_type = 4
+        self.crushing_boulders.append(boulder)
 
     def clear_boulders(self):
-        for boulder_body, boulder_shape in self.boulders:
-            self.space.remove(boulder_body, boulder_shape)
-        self.boulders.clear()
+        if self.current_boulder:
+            self.space.remove(self.current_boulder['body'], self.current_boulder['shape'])
+            self.current_boulder = None
+        for boulder in self.crushing_boulders:
+            self.space.remove(boulder['body'], boulder['shape'])
+        self.crushing_boulders.clear()
 
-    def create_ground(self):
+    def create_ground_poly(self):
+        # **Create a ground as a static polygon with thickness**
         ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        ground_shape = pymunk.Segment(ground_body, (0, self.height), (self.width, self.height), 5)
+        ground_shape = pymunk.Poly(ground_body, [
+            (0, self.height),
+            (self.width, self.height),
+            (self.width, self.height - 10),  # Ground thickness of 10 pixels
+            (0, self.height - 10)
+        ])
         ground_shape.friction = self.friction_slider.value
         ground_shape.collision_type = 2  # Set collision type for ground
         self.space.add(ground_body, ground_shape)
@@ -239,14 +286,16 @@ class Game:
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             move_force = -base_move_force
             # Apply additional force based on strength when pushing boulders
-            for boulder, _ in self.boulders:
+            if self.current_boulder and self.current_boulder['state'] == 'normal':
+                boulder = self.current_boulder['body']
                 if self.sisyphus.position.x > boulder.position.x:
                     move_force -= strength
             self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             move_force = base_move_force
             # Apply additional force based on strength when pushing boulders
-            for boulder, _ in self.boulders:
+            if self.current_boulder and self.current_boulder['state'] == 'normal':
+                boulder = self.current_boulder['body']
                 if self.sisyphus.position.x < boulder.position.x:
                     move_force += strength
             self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
@@ -270,13 +319,23 @@ class Game:
             self.update_camera()
 
             # Update friction for all objects when friction slider changes
-            for boulder_body, boulder_shape in self.boulders:
-                boulder_shape.friction = self.friction_slider.value *0.8
+            if self.current_boulder and self.current_boulder['state'] == 'normal':
+                self.current_boulder['shape'].friction = self.friction_slider.value * 0.8
+            for boulder in self.crushing_boulders:
+                boulder['shape'].friction = self.friction_slider.value * 0.8
             for wall in self.walls:
                 wall.friction = self.friction_slider.value
             for shape in self.space.shapes:
                 if isinstance(shape, pymunk.Segment):
                     shape.friction = self.friction_slider.value * 0.8
+
+            # Update crushing boulders
+            for boulder in self.crushing_boulders[:]:  # Iterate over a copy
+                boulder['timer'] -= 1
+                if boulder['timer'] <= 0:
+                    # Remove boulder from space and from list
+                    self.space.remove(boulder['body'], boulder['shape'])
+                    self.crushing_boulders.remove(boulder)
 
             # Check if any boulder is in the detection area at the top
             hill_top_x = self.width * 4.35 // 8
@@ -289,7 +348,8 @@ class Game:
             sensor_y = self.height - 20
             sensor_size = 50
 
-            for boulder, _ in self.boulders:
+            if self.current_boulder and self.current_boulder['state'] == 'normal':
+                boulder = self.current_boulder['body']
                 # Check if boulder is at bottom sensors
                 if self.boulder_at_bottom or boulder.position.x < left_sensor_x or boulder.position.x > right_sensor_x:
                     self.boulder_at_bottom = True
@@ -298,8 +358,7 @@ class Game:
                 if (hill_top_x - 50 < boulder.position.x < hill_top_x + 50 and 
                     hill_top_y - 50 < boulder.position.y < hill_top_y + 50):
                     boulder_detected = True
-                    break
-            
+
             # Increment counter when boulder enters detection area
             if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
                 self.hill_passes += 1
@@ -330,7 +389,7 @@ class Game:
             self.screen.blit(grounded_text, (10, 260))
             self.screen.blit(cooldown_text, (10, 285))
 
-            # Draw detection area (twice as tall)
+            # Draw detection area
             hill_top_rect = pygame.Rect(hill_top_x - 25 - self.camera_x, hill_top_y - 50, 50, 100)
             pygame.draw.rect(self.screen, self.current_hill_color, hill_top_rect)
             
@@ -354,7 +413,10 @@ class Game:
             pygame.display.flip()
             self.clock.tick(60)
 
-        pygame.quit()
+        def run(self):
+            # This method was already correctly implemented above
+            # The duplicated run method from previous response has been removed
+            pass
 
 if __name__ == "__main__":
     game = Game()
