@@ -135,6 +135,8 @@ class Game:
         handler_crushing_crushing = self.space.add_collision_handler(4, 4)
         handler_crushing_crushing.begin = self.ignore_collision
 
+        self.spawn_boulder()  # Spawn initial boulder when game starts
+
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
         return False  # Returning False tells Pymunk to ignore the collision
