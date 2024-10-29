@@ -1,6 +1,8 @@
 import pygame
 import pymunk
 import pymunk.pygame_util
+import os
+import math
 
 class DebugSlider:
     def __init__(self, x, y, width, height, min_value, max_value, initial_value, label):
@@ -53,14 +55,36 @@ class Button:
 class Game:
     def __init__(self):
         pygame.init()
-        self.width, self.height = 1600, 600  # Doubled the width
-        self.screen = pygame.display.set_mode((800, 600))  # Keep display size the same
+        self.width, self.height = 1600, 600  # Extended width for a larger game area
+        self.screen = pygame.display.set_mode((800, 600))  # Window size remains the same
         pygame.display.set_caption("Sisyphus and the Boulder")
 
         self.space = pymunk.Space()
         self.space.gravity = (0, 900)
-        # Set collision_slop to zero to prevent penetration
+        # **Set collision_slop to zero to prevent penetration**
         self.space.collision_slop = 0.0
+
+        # **Load Boulder Sprites**
+        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        try:
+            self.boulder_sprite_gray = pygame.image.load(os.path.join(assets_dir, 'boulder_gray.png')).convert_alpha()
+        except pygame.error as e:
+            print(f"Failed to load boulder_gray.png: {e}")
+            pygame.quit()
+            exit()
+
+        # Optional: Load a separate sprite for the crushing state
+        # If you don't have one, we'll tint the gray sprite dynamically
+        try:
+            self.boulder_sprite_orange = pygame.image.load(os.path.join(assets_dir, 'boulder_orange.png')).convert_alpha()
+            self.has_orange_sprite = True
+        except pygame.error:
+            self.has_orange_sprite = False
+            # Create an orange tint surface if separate sprite isn't available
+            self.boulder_sprite_orange = self.boulder_sprite_gray.copy()
+            orange_surface = pygame.Surface(self.boulder_sprite_gray.get_size(), pygame.SRCALPHA)
+            orange_surface.fill((255, 165, 0, 100))  # Semi-transparent orange
+            self.boulder_sprite_orange.blit(orange_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
         # Debug sliders
         self.jump_force_slider = DebugSlider(10, 10, 200, 20, 1000, 5000, 3000, "Jump Force")
@@ -75,7 +99,7 @@ class Game:
         self.sisyphus = self.create_sisyphus()
         self.current_boulder = None
         self.crushing_boulders = []
-        self.ground = self.create_ground_poly()
+        self.ground = self.create_ground_poly()  # Use the new ground creation method
         self.walls = self.create_walls()
         self.hill = self.create_hill()
         
@@ -171,8 +195,11 @@ class Game:
         # Change state to 'crushing'
         boulder['state'] = 'crushing'
         boulder['timer'] = 60  # Duration of the 'crushing' animation (1 second if 60 FPS)
-        # Set shape color to orange
-        boulder['shape'].color = pygame.Color('orange')
+        # Set shape color to orange if a separate sprite exists; otherwise, handle tinting during rendering
+        if self.has_orange_sprite:
+            boulder['shape'].color = pygame.Color('orange')
+        else:
+            pass  # Tinting handled during rendering
         # Change collision type to 4 (crushing boulders)
         boulder['shape'].collision_type = 4
         self.crushing_boulders.append(boulder)
@@ -326,7 +353,7 @@ class Game:
             for wall in self.walls:
                 wall.friction = self.friction_slider.value
             for shape in self.space.shapes:
-                if isinstance(shape, pymunk.Segment):
+                if isinstance(shape, pymunk.Segment) or isinstance(shape, pymunk.Poly):
                     shape.friction = self.friction_slider.value * 0.8
 
             # Update crushing boulders
@@ -373,15 +400,57 @@ class Game:
             if self.jump_cooldown > 0:
                 self.jump_cooldown -= 1
 
-            self.screen.fill((255, 255, 255))
+            # Step the physics simulation
             self.space.step(1/60.0)
              
+            # Clear the screen
+            self.screen.fill((255, 255, 255))
+
+            # **Draw Static Elements Using Pymunk's Debug Draw**
+            # (Ground, walls, hill)
+            self.draw_options.transform = pymunk.Transform(tx=-self.camera_x, ty=0)
+            self.space.debug_draw(self.draw_options)
+            self.draw_options.transform = pymunk.Transform.identity()
+
+            # **Draw Boulder Sprites**
+            for boulder in [self.current_boulder] + self.crushing_boulders:
+                if boulder is None:
+                    continue
+                body = boulder['body']
+                shape = boulder['shape']
+                x, y = body.position
+                r = shape.radius
+
+                # Scale the sprite based on radius
+                # Adding a slight padding to fully cover the debug circle
+                sprite_size = int(2 * r) + 4  # +4 pixels padding
+                if sprite_size <= 0:
+                    sprite_size = 10  # Minimum size to prevent errors
+
+                # Select appropriate sprite based on state
+                if boulder['state'] == 'normal':
+                    sprite = self.boulder_sprite_gray
+                else:
+                    sprite = self.boulder_sprite_orange
+
+                # Scale the sprite
+                scaled_sprite = pygame.transform.scale(sprite, (sprite_size, sprite_size))
+
+                # **Rotate the sprite based on the boulder's angle**
+                # Pymunk's angle is in radians. Pygame rotates counter-clockwise, so invert the angle.
+                angle_degrees = -math.degrees(body.angle)
+                rotated_sprite = pygame.transform.rotate(scaled_sprite, angle_degrees)
+
+                # Get the rect of the rotated sprite and center it on the boulder's position
+                rotated_rect = rotated_sprite.get_rect(center=(x - self.camera_x, y))
+
+                # Blit the rotated sprite onto the screen
+                self.screen.blit(rotated_sprite, rotated_rect.topleft)
+
+            # **Draw UI Elements**
             # Add money display
-            self.font = pygame.font.Font(None, 36)  # Font for money
             money_text = self.font.render(f"$ {self.money}", True, (22,129,24))
             self.screen.blit(money_text, (720, 24))
-
-            self.font = pygame.font.Font(None, 24)  # Font for debug text
 
             # Add debug text for is_grounded and jump_cooldown
             grounded_text = self.font.render(f"Grounded: {self.is_grounded}", True, (0, 0, 0))
@@ -389,16 +458,9 @@ class Game:
             self.screen.blit(grounded_text, (10, 260))
             self.screen.blit(cooldown_text, (10, 285))
 
-            # Draw detection area
+            # Draw detection area (twice as tall)
             hill_top_rect = pygame.Rect(hill_top_x - 25 - self.camera_x, hill_top_y - 50, 50, 100)
             pygame.draw.rect(self.screen, self.current_hill_color, hill_top_rect)
-            
-            # Translate all drawing operations by the negative of the camera position
-            self.draw_options.transform = pymunk.Transform(tx=-self.camera_x, ty=0)
-            self.space.debug_draw(self.draw_options)
-            
-            # Reset the transform for UI elements
-            self.draw_options.transform = pymunk.Transform.identity()
             
             # Draw debug sliders
             self.jump_force_slider.draw(self.screen)
@@ -410,12 +472,13 @@ class Game:
             self.spawn_boulder_button.draw(self.screen)
             self.clear_boulders_button.draw(self.screen)
             
+            # Update the display
             pygame.display.flip()
             self.clock.tick(60)
 
         def run(self):
-            # This method was already correctly implemented above
-            # The duplicated run method from previous response has been removed
+            # The main loop is already implemented in the run method above.
+            # This redundant run method from previous response has been removed.
             pass
 
 if __name__ == "__main__":
