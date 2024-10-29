@@ -478,11 +478,6 @@ class Game:
             pygame.display.flip()
             self.clock.tick(60)
 
-        def run(self):
-            # The main loop is already implemented in the run method above.
-            # This redundant run method from previous response has been removed.
-            pass
-
 if __name__ == "__main__":
     game = Game()
     game.run()
