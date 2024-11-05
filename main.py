@@ -59,11 +59,13 @@ class Game:
             orange_surface.fill((255, 165, 0, 100))  # Semi-transparent orange
             self.boulder_sprite_orange.blit(orange_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
-        # Move buttons to right side below money display
+        # Move buttons to right side below money display - make them wider
         button_x = 620
-        self.small_boulder_button = Button(button_x, 60, 150, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
-        self.medium_boulder_button = Button(button_x, 100, 150, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
-        self.large_boulder_button = Button(button_x, 140, 150, 30, "Large Boulder (50$)", lambda: self.unlock_and_spawn(80))
+        button_width = 180  # Increased from 150
+        self.small_boulder_button = Button(button_x, 60, button_width, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
+        self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
+        self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (100$)", lambda: self.unlock_and_spawn(80))
+        self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (1000$)", lambda: self.unlock_and_spawn(120))
         
         # Set default values that were previously in sliders
         self.jump_force = 3000
@@ -74,7 +76,8 @@ class Game:
         self.unlocked_sizes = {
             40: True,  # Small boulder always unlocked
             50: False, # Medium boulder starts locked
-            80: False  # Large boulder size increased to 80
+            80: False, # Large boulder size increased to 80
+            120: False  # Huge boulder starts locked
         }
 
         self.sisyphus = self.create_sisyphus()
@@ -120,6 +123,18 @@ class Game:
         handler_crushing_crushing.begin = self.ignore_collision
 
         self.spawn_boulder()  # Spawn initial boulder when game starts
+
+        # Create fonts - add money font
+        self.font = pygame.font.Font(None, 24)  # Regular font for debug text
+        self.money_font = pygame.font.Font(None, 48)  # Bigger font for money display
+        
+        # Move buttons to center - calculate x position based on screen width
+        button_width = 180
+        button_x = (800 - button_width) // 2  # Center horizontally in 800px window
+        self.small_boulder_button = Button(button_x, 60, button_width, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
+        self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
+        self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (100$)", lambda: self.unlock_and_spawn(80))
+        self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (1000$)", lambda: self.unlock_and_spawn(120))
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -167,17 +182,21 @@ class Game:
         return boulder_body, boulder_shape
 
     def unlock_and_spawn(self, size):
-        cost = 10 if size == 50 else 50
-        if not self.unlocked_sizes[size] and self.money >= cost:
-            self.money -= cost
+        costs = {50: 10, 80: 100, 120: 1000}
+        rewards = {50: 5, 80: 20, 120: 100}
+        
+        if not self.unlocked_sizes[size] and self.money >= costs[size]:
+            self.money -= costs[size]
             self.unlocked_sizes[size] = True
             # Update button text
             if size == 50:
                 self.medium_boulder_button.text = "Medium Boulder"
-            else:
+            elif size == 80:
                 self.large_boulder_button.text = "Large Boulder"
+            else:
+                self.huge_boulder_button.text = "Huge Boulder"
         if self.unlocked_sizes[size]:
-            self.spawn_boulder(size, 2 if size == 50 else 5)
+            self.spawn_boulder(size, rewards[size])
 
     def spawn_boulder(self, size=40, reward=1):
         # Check cooldown
@@ -287,6 +306,7 @@ class Game:
             self.small_boulder_button.handle_event(event)
             self.medium_boulder_button.handle_event(event)
             self.large_boulder_button.handle_event(event)
+            self.huge_boulder_button.handle_event(event)
         
         # Handle continuous jumping when key is held
         keys = pygame.key.get_pressed()
@@ -464,16 +484,25 @@ class Game:
             # **Draw UI Elements**
             # Add money display
             money_text = self.font.render(f"$ {self.money}", True, (22,129,24))
-            self.screen.blit(money_text, (720, 24))
             
-            # Draw buttons
+            # Draw money display centered
+            money_text = self.money_font.render(f"$ {self.money}", True, (22,129,24))
+            money_rect = money_text.get_rect(centerx=400, y=20)  # Center horizontally at y=20
+            self.screen.blit(money_text, money_rect)
+            
+            # Draw buttons - only show if previous size is unlocked
             self.small_boulder_button.draw(self.screen)
-            self.medium_boulder_button.draw(self.screen)
-            self.large_boulder_button.draw(self.screen)
+            if self.unlocked_sizes[40]:
+                self.medium_boulder_button.draw(self.screen)
+            if self.unlocked_sizes[50]:
+                self.large_boulder_button.draw(self.screen)
+            if self.unlocked_sizes[80]:
+                self.huge_boulder_button.draw(self.screen)
 
             # Update button states based on unlocks and money
-            self.medium_boulder_button.enabled = self.unlocked_sizes[50] or self.money >= 10
-            self.large_boulder_button.enabled = self.unlocked_sizes[80] or self.money >= 50
+            self.medium_boulder_button.enabled = self.unlocked_sizes[40] and (self.unlocked_sizes[50] or self.money >= 10)
+            self.large_boulder_button.enabled = self.unlocked_sizes[50] and (self.unlocked_sizes[80] or self.money >= 100)
+            self.huge_boulder_button.enabled = self.unlocked_sizes[80] and (self.unlocked_sizes[120] or self.money >= 1000)
             
             # Update the display
             pygame.display.flip()
