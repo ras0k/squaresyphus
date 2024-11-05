@@ -4,52 +4,25 @@ import pymunk.pygame_util
 import os
 import math
 
-class DebugSlider:
-    def __init__(self, x, y, width, height, min_value, max_value, initial_value, label):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.min_value = min_value
-        self.max_value = max_value
-        self.value = initial_value
-        self.dragging = False
-        self.label = label
-        self.font = pygame.font.Font(None, 24)
-
-    def draw(self, screen):
-        pygame.draw.rect(screen, (200, 200, 200), self.rect)
-        slider_pos = self.rect.x + int((self.value - self.min_value) / (self.max_value - self.min_value) * self.rect.width)
-        pygame.draw.rect(screen, (100, 100, 100), (slider_pos - 5, self.rect.y, 10, self.rect.height))
-        
-        # Draw label and value with 2 decimal places for values less than 1
-        value_str = str(int(self.value)) if self.value >= 1 else f"{self.value:.2f}"
-        label_text = self.font.render(f"{self.label}: {value_str}", True, (0, 0, 0))
-        screen.blit(label_text, (self.rect.x, self.rect.y + 25))
-
-    def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.rect.collidepoint(event.pos):
-                self.dragging = True
-        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-            self.dragging = False
-        elif event.type == pygame.MOUSEMOTION and self.dragging:
-            self.value = max(self.min_value, min(self.max_value, 
-                self.min_value + (event.pos[0] - self.rect.x) / self.rect.width * (self.max_value - self.min_value)))
-
 class Button:
     def __init__(self, x, y, width, height, text, callback):
         self.rect = pygame.Rect(x, y, width, height)
         self.text = text
         self.callback = callback
         self.font = pygame.font.Font(None, 24)
+        self.enabled = True
 
     def draw(self, screen):
-        pygame.draw.rect(screen, (150, 150, 150), self.rect)
-        text_surface = self.font.render(self.text, True, (0, 0, 0))
+        color = (150, 150, 150) if self.enabled else (100, 100, 100)
+        pygame.draw.rect(screen, color, self.rect)
+        text_color = (0, 0, 0) if self.enabled else (80, 80, 80)
+        text_surface = self.font.render(self.text, True, text_color)
         text_rect = text_surface.get_rect(center=self.rect.center)
         screen.blit(text_surface, text_rect)
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.rect.collidepoint(event.pos):
+            if self.rect.collidepoint(event.pos) and self.enabled:
                 self.callback()
 
 class Game:
@@ -86,15 +59,23 @@ class Game:
             orange_surface.fill((255, 165, 0, 100))  # Semi-transparent orange
             self.boulder_sprite_orange.blit(orange_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
-        # Debug sliders
-        self.jump_force_slider = DebugSlider(10, 10, 200, 20, 1000, 5000, 3000, "Jump Force")
-        self.strength_slider = DebugSlider(10, 60, 200, 20, 10, 500, 36, "Strength")
-        self.boulder_radius_slider = DebugSlider(10, 110, 200, 20, 10, 120, 40, "Boulder Radius")
-        self.friction_slider = DebugSlider(10, 160, 200, 20, 0, 1.0, 0.6, "Friction")
+        # Move buttons to right side below money display
+        button_x = 620
+        self.small_boulder_button = Button(button_x, 60, 150, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
+        self.medium_boulder_button = Button(button_x, 100, 150, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
+        self.large_boulder_button = Button(button_x, 140, 150, 30, "Large Boulder (50$)", lambda: self.unlock_and_spawn(80))
+        
+        # Set default values that were previously in sliders
+        self.jump_force = 3000
+        self.strength = 36
+        self.friction = 0.6
 
-        # Buttons
-        self.spawn_boulder_button = Button(10, 210, 150, 30, "Spawn Boulder", self.spawn_boulder)
-        self.clear_boulders_button = Button(170, 210, 150, 30, "Clear Boulders", self.clear_boulders)
+        # Track unlocked boulder sizes
+        self.unlocked_sizes = {
+            40: True,  # Small boulder always unlocked
+            50: False, # Medium boulder starts locked
+            80: False  # Large boulder size increased to 80
+        }
 
         self.sisyphus = self.create_sisyphus()
         self.current_boulder = None
@@ -118,9 +99,12 @@ class Game:
         
         # Add counter for hill passes and money
         self.hill_passes = 0
-        self.money = 0
+        self.money = 10  # Changed from 100 to 10
         self.last_boulder_detected = False  # Track previous detection state
         self.boulder_at_bottom = False  # Track if boulder has reached bottom
+
+        # Add boulder spawn cooldown
+        self.spawn_cooldown = 0
 
         # **Add Collision Handlers to Ignore Specific Collisions**
         # Crushing Boulders (4) vs Player (1) - Ignore
@@ -148,7 +132,7 @@ class Game:
         sisyphus_body = pymunk.Body(sisyphus_mass, sisyphus_moment)
         sisyphus_body.position = 400, self.height - sisyphus_size/2
         sisyphus_shape = pymunk.Poly.create_box(sisyphus_body, (sisyphus_size, sisyphus_size))
-        sisyphus_shape.friction = self.friction_slider.value
+        sisyphus_shape.friction = self.friction
         
         # Add collision handler to detect ground contact
         def begin_collision(arbiter, space, data):
@@ -168,30 +152,53 @@ class Game:
         self.space.add(sisyphus_body, sisyphus_shape)
         return sisyphus_body
 
-    def create_boulder(self):
-        boulder_radius = self.boulder_radius_slider.value
-        boulder_mass = boulder_radius * 0.5  # Mass is now proportional to radius
-        boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, boulder_radius)
+    def create_boulder(self, radius=40):
+        boulder_mass = radius * 0.5
+        boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, radius)
         boulder_body = pymunk.Body(boulder_mass, boulder_moment)
         
         # Spawn left of the hill
         boulder_body.position = self.width * .3 , self.height - 250
-        boulder_shape = pymunk.Circle(boulder_body, boulder_radius)
-        boulder_shape.friction = self.friction_slider.value
+        boulder_shape = pymunk.Circle(boulder_body, radius)
+        boulder_shape.friction = self.friction
         boulder_shape.color = pygame.Color('gray')  # Set default color
         boulder_shape.collision_type = 3  # Collision type for normal boulders
         self.space.add(boulder_body, boulder_shape)
         return boulder_body, boulder_shape
 
-    def spawn_boulder(self):
-        if self.current_boulder is not None:
-            # Initiate crushing of the existing boulder
-            self.crush_boulder(self.current_boulder)
-            self.current_boulder = None  # Clear current boulder
+    def unlock_and_spawn(self, size):
+        cost = 10 if size == 50 else 50
+        if not self.unlocked_sizes[size] and self.money >= cost:
+            self.money -= cost
+            self.unlocked_sizes[size] = True
+            # Update button text
+            if size == 50:
+                self.medium_boulder_button.text = "Medium Boulder"
+            else:
+                self.large_boulder_button.text = "Large Boulder"
+        if self.unlocked_sizes[size]:
+            self.spawn_boulder(size, 2 if size == 50 else 5)
 
-        boulder_body, boulder_shape = self.create_boulder()
+    def spawn_boulder(self, size=40, reward=1):
+        # Check cooldown
+        if self.spawn_cooldown > 0:
+            return
+            
+        # Only check unlocks, no cost per spawn
+        if not self.unlocked_sizes[size]:
+            return
+            
+        if self.current_boulder is not None:
+            self.crush_boulder(self.current_boulder)
+            self.current_boulder = None
+
+        boulder_body, boulder_shape = self.create_boulder(size)
         new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
         self.current_boulder = new_boulder
+        self.boulder_reward = reward
+        
+        # Set spawn cooldown to 5 seconds (300 frames at 60 FPS)
+        self.spawn_cooldown = 300
 
     def crush_boulder(self, boulder):
         # Change state to 'crushing'
@@ -223,7 +230,7 @@ class Game:
             (self.width, self.height - 10),  # Ground thickness of 10 pixels
             (0, self.height - 10)
         ])
-        ground_shape.friction = self.friction_slider.value
+        ground_shape.friction = self.friction
         ground_shape.collision_type = 2  # Set collision type for ground
         self.space.add(ground_body, ground_shape)
         return ground_body
@@ -244,7 +251,7 @@ class Game:
         top_wall_shape = pymunk.Segment(wall_body, (0, 0), (self.width, 0), wall_thickness)
         
         for wall in [left_wall_shape, right_wall_shape, top_wall_shape]:
-            wall.friction = self.friction_slider.value
+            wall.friction = self.friction
             wall.collision_type = 2  # Set collision type for walls
             self.space.add(wall)
             walls.append(wall)
@@ -265,7 +272,7 @@ class Game:
         hill_shapes = []
         for i in range(len(hill_points) - 1):
             segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
-            segment.friction = self.friction_slider.value
+            segment.friction = self.friction
             segment.collision_type = 2  # Set collision type for hill
             hill_shapes.append(segment)
         
@@ -276,14 +283,10 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
-            # Debug sliders event handling
-            self.jump_force_slider.handle_event(event)
-            self.strength_slider.handle_event(event)
-            self.boulder_radius_slider.handle_event(event)
-            self.friction_slider.handle_event(event)
             # Button event handling
-            self.spawn_boulder_button.handle_event(event)
-            self.clear_boulders_button.handle_event(event)
+            self.small_boulder_button.handle_event(event)
+            self.medium_boulder_button.handle_event(event)
+            self.large_boulder_button.handle_event(event)
         
         # Handle continuous jumping when key is held
         keys = pygame.key.get_pressed()
@@ -297,7 +300,7 @@ class Game:
     def move_sisyphus(self):
         keys = pygame.key.get_pressed()
         base_move_force = 100  # Base movement force
-        strength = self.strength_slider.value
+        strength = self.strength
         
         # Scale sisyphus based on strength
         scale_factor = 1 + (strength - 36) / 500  # 36 is initial strength
@@ -308,7 +311,7 @@ class Game:
                 if abs(current_size - target_size) > 1:
                     self.space.remove(shape)
                     new_shape = pymunk.Poly.create_box(self.sisyphus, (50 * scale_factor, 50 * scale_factor))
-                    new_shape.friction = self.friction_slider.value
+                    new_shape.friction = self.friction
                     new_shape.collision_type = 1  # Set collision type for resized sisyphus
                     self.space.add(new_shape)
                
@@ -331,7 +334,7 @@ class Game:
 
     def jump(self):
         # Apply jump force in world coordinates (always upwards)
-        jump_force = (0, -self.jump_force_slider.value)
+        jump_force = (0, -self.jump_force)
         self.sisyphus.apply_impulse_at_world_point(jump_force, self.sisyphus.position)
 
     def update_camera(self):
@@ -349,14 +352,14 @@ class Game:
 
             # Update friction for all objects when friction slider changes
             if self.current_boulder and self.current_boulder['state'] == 'normal':
-                self.current_boulder['shape'].friction = self.friction_slider.value * 0.8
+                self.current_boulder['shape'].friction = self.friction * 0.8
             for boulder in self.crushing_boulders:
-                boulder['shape'].friction = self.friction_slider.value * 0.8
+                boulder['shape'].friction = self.friction * 0.8
             for wall in self.walls:
-                wall.friction = self.friction_slider.value
+                wall.friction = self.friction
             for shape in self.space.shapes:
                 if isinstance(shape, pymunk.Segment) or isinstance(shape, pymunk.Poly):
-                    shape.friction = self.friction_slider.value * 0.8
+                    shape.friction = self.friction * 0.8
 
             # Update crushing boulders
             for boulder in self.crushing_boulders[:]:  # Iterate over a copy
@@ -391,8 +394,8 @@ class Game:
             # Increment counter when boulder enters detection area
             if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
                 self.hill_passes += 1
-                self.money += 1
-                self.strength_slider.value = min(self.strength_slider.value + 1, self.strength_slider.max_value)
+                self.money += 1 * self.boulder_reward  # Multiply reward by boulder type
+                self.strength = min(self.strength + 1, 500)
                 self.boulder_at_bottom = False
             
             self.last_boulder_detected = boulder_detected
@@ -401,6 +404,15 @@ class Game:
             # Update jump cooldown
             if self.jump_cooldown > 0:
                 self.jump_cooldown -= 1
+
+            # Update spawn cooldown
+            if self.spawn_cooldown > 0:
+                self.spawn_cooldown -= 1
+                
+            # Draw cooldown text if active
+            if self.spawn_cooldown > 0:
+                cooldown_text = self.font.render(f"Spawn Cooldown: {self.spawn_cooldown//60 + 1}s", True, (200, 0, 0))
+                self.screen.blit(cooldown_text, (10, 310))
 
             # Step the physics simulation
             self.space.step(1/60.0)
@@ -426,7 +438,7 @@ class Game:
                 # Scale the sprite based on radius
                 # Adding a slight padding to fully cover the debug circle
                 sprite_size = int(2 * r) + 4  # +4 pixels padding
-                if sprite_size <= 0:
+                if (sprite_size <= 0):
                     sprite_size = 10  # Minimum size to prevent errors
 
                 # Select appropriate sprite based on state
@@ -453,26 +465,15 @@ class Game:
             # Add money display
             money_text = self.font.render(f"$ {self.money}", True, (22,129,24))
             self.screen.blit(money_text, (720, 24))
-
-            # Add debug text for is_grounded and jump_cooldown
-            grounded_text = self.font.render(f"Grounded: {self.is_grounded}", True, (0, 0, 0))
-            cooldown_text = self.font.render(f"Jump Cooldown: {self.jump_cooldown}", True, (0, 0, 0))
-            self.screen.blit(grounded_text, (10, 260))
-            self.screen.blit(cooldown_text, (10, 285))
-
-            # Draw detection area (twice as tall)
-            hill_top_rect = pygame.Rect(hill_top_x - 25 - self.camera_x, hill_top_y - 50, 50, 100)
-            pygame.draw.rect(self.screen, self.current_hill_color, hill_top_rect)
-            
-            # Draw debug sliders
-            self.jump_force_slider.draw(self.screen)
-            self.strength_slider.draw(self.screen)
-            self.boulder_radius_slider.draw(self.screen)
-            self.friction_slider.draw(self.screen)
             
             # Draw buttons
-            self.spawn_boulder_button.draw(self.screen)
-            self.clear_boulders_button.draw(self.screen)
+            self.small_boulder_button.draw(self.screen)
+            self.medium_boulder_button.draw(self.screen)
+            self.large_boulder_button.draw(self.screen)
+
+            # Update button states based on unlocks and money
+            self.medium_boulder_button.enabled = self.unlocked_sizes[50] or self.money >= 10
+            self.large_boulder_button.enabled = self.unlocked_sizes[80] or self.money >= 50
             
             # Update the display
             pygame.display.flip()
