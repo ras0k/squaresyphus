@@ -3,7 +3,7 @@ import pymunk
 import pymunk.pygame_util
 import os
 import math
-import random  # Add this import for particle effects
+import random
 
 class Button:
     def __init__(self, x, y, width, height, text, callback):
