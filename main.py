@@ -159,6 +159,20 @@ class Game:
         # Add debug button for instant level up and money particles
         self.debug_level_button = Button(10, 60, 100, 20, "Level Up", self.debug_level_up)
         self.debug_money_button = Button(10, 90, 100, 20, "Money Test", lambda: self.spawn_money_particles(10))
+        grass_raw = pygame.image.load(os.path.join(assets_dir, 'grass.png')).convert_alpha()
+        # Scale grass sprite up by 2x
+        grass_width = grass_raw.get_width() * 2
+        grass_height = grass_raw.get_height() * 2
+        self.grass_sprite = pygame.transform.scale(grass_raw, (grass_width, grass_height))
+        # Debug position controls for grass
+        self.grass_x = 0  # Initial X offset
+        self.grass_y = 540  # Adjust initial Y position by raising 30 pixels
+        
+        # Add debug sliders for grass position
+        self.grass_x_slider = pygame.Rect(10, 150, 200, 20)
+        self.grass_y_slider = pygame.Rect(10, 180, 200, 20)
+        self.dragging_x = False
+        self.dragging_y = False
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -296,7 +310,7 @@ class Game:
         sisyphus_mass = 10
         sisyphus_moment = pymunk.moment_for_box(sisyphus_mass, (sisyphus_size, sisyphus_size))
         sisyphus_body = pymunk.Body(sisyphus_mass, sisyphus_moment)
-        sisyphus_body.position = 400, self.height - sisyphus_size/2
+        sisyphus_body.position = 400, self.height - sisyphus_size/2 - 30  # Raise by 30 pixels
         sisyphus_shape = pymunk.Poly.create_box(sisyphus_body, (sisyphus_size, sisyphus_size))
         sisyphus_shape.friction = self.friction
         sisyphus_shape.color = pygame.Color('red')  # Change color to red
@@ -325,7 +339,7 @@ class Game:
         boulder_body = pymunk.Body(boulder_mass, boulder_moment)
         
         # Spawn left of the hill
-        boulder_body.position = self.width * .3 , self.height - 250
+        boulder_body.position = self.width * .3 , self.height - 250 - 30  # Raise by 30 pixels
         boulder_shape = pymunk.Circle(boulder_body, radius)
         boulder_shape.friction = self.friction
         boulder_shape.color = pygame.Color('gray')  # Set default color
@@ -396,10 +410,10 @@ class Game:
         # **Create a ground as a static polygon with thickness**
         ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
         ground_shape = pymunk.Poly(ground_body, [
-            (0, self.height),
-            (self.width, self.height),
-            (self.width, self.height - 10),  # Ground thickness of 10 pixels
-            (0, self.height - 10)
+            (0, self.height - 30),  # Raise by 30 pixels
+            (self.width, self.height - 30),  # Raise by 30 pixels
+            (self.width, self.height - 40),  # Raise by 30 pixels
+            (0, self.height - 40)  # Raise by 30 pixels
         ])
         ground_shape.friction = self.friction
         ground_shape.collision_type = 2  # Set collision type for ground
@@ -435,10 +449,10 @@ class Game:
         
         # Create a more complex hill shape
         hill_points = [
-            (self.width * 3 // 8, self.height),
-            (self.width * 4.2 // 8, self.height - 120),
-            (self.width * 4.5 // 8, self.height - 120),  # Plateau
-            (self.width * 5.7 // 8, self.height)
+            (self.width * 3 // 8, self.height - 30),  # Raise by 30 pixels
+            (self.width * 4.2 // 8, self.height - 150),  # Raise by 30 pixels
+            (self.width * 4.5 // 8, self.height - 150),  # Raise by 30 pixels
+            (self.width * 5.7 // 8, self.height - 30)  # Raise by 30 pixels
         ]
         
         hill_shapes = []
@@ -454,10 +468,10 @@ class Game:
 
     def draw_hill(self):
         hill_points = [
-            (self.width * 3 // 8, self.height),
-            (self.width * 4.2 // 8, self.height - 120),
-            (self.width * 4.5 // 8, self.height - 120),  # Plateau
-            (self.width * 5.7 // 8, self.height)
+            (self.width * 3 // 8, self.height - 30),  # Raise by 30 pixels
+            (self.width * 4.2 // 8, self.height - 150),  # Raise by 30 pixels
+            (self.width * 4.5 // 8, self.height - 150),  # Raise by 30 pixels
+            (self.width * 5.7 // 8, self.height - 30)  # Raise by 30 pixels
         ]
         pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill_points])  # Fill hill
         pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill_points], 5)  # Draw hill stroke
@@ -486,19 +500,78 @@ class Game:
             if cloud[0] > self.width:  # Reset cloud position if it goes off screen
                 cloud[0] = -width
 
+    def draw_grass(self):
+        # Calculate how many times we need to tile the grass horizontally
+        grass_width = self.grass_sprite.get_width()
+        num_tiles = (self.width // grass_width) + 2  # +2 to ensure coverage during scrolling
+        
+        # Draw grass tiles
+        for i in range(num_tiles):
+            x = i * grass_width + (self.grass_x % grass_width) - self.camera_x
+            self.screen.blit(self.grass_sprite, (x, self.grass_y))
+
+    def draw_grass_debug_controls(self):
+        # Draw sliders
+        pygame.draw.rect(self.screen, (100, 100, 100), self.grass_x_slider)
+        pygame.draw.rect(self.screen, (100, 100, 100), self.grass_y_slider)
+        
+        # Draw handles
+        x_handle = pygame.Rect(
+            self.grass_x_slider.x + (self.grass_x % 100) * 2,
+            self.grass_x_slider.y,
+            10, 20
+        )
+        y_handle = pygame.Rect(
+            self.grass_y_slider.x + ((self.grass_y - (self.height - 200)) / 200) * self.grass_y_slider.width,
+            self.grass_y_slider.y,
+            10, 20
+        )
+        
+        pygame.draw.rect(self.screen, (150, 150, 150), x_handle)
+        pygame.draw.rect(self.screen, (150, 150, 150), y_handle)
+        
+        # Draw labels
+        font = pygame.font.Font(None, 24)
+        x_text = font.render(f"Grass X: {self.grass_x}", True, (0, 0, 0))
+        y_text = font.render(f"Grass Y: {self.grass_y}", True, (0, 0, 0))
+        self.screen.blit(x_text, (220, 150))
+        self.screen.blit(y_text, (220, 180))
+
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
-            # Button event handling
+                
+            # Handle grass position sliders
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if self.grass_x_slider.collidepoint(event.pos):
+                    self.dragging_x = True
+                elif self.grass_y_slider.collidepoint(event.pos):
+                    self.dragging_y = True
+                    
+            elif event.type == pygame.MOUSEBUTTONUP:
+                self.dragging_x = False
+                self.dragging_y = False
+                
+            elif event.type == pygame.MOUSEMOTION:
+                if self.dragging_x:
+                    rel_x = event.pos[0] - self.grass_x_slider.x
+                    self.grass_x = (rel_x // 2) % 100
+                if self.dragging_y:
+                    rel_y = event.pos[0] - self.grass_y_slider.x
+                    # Map slider position to a reasonable range for Y
+                    self.grass_y = self.height - 200 + (rel_y / self.grass_y_slider.width) * 200
+                    self.grass_y = max(self.height - 200, min(self.height, self.grass_y))
+                
+            # Existing event handling...
             self.small_boulder_button.handle_event(event)
             self.medium_boulder_button.handle_event(event)
             self.large_boulder_button.handle_event(event)
             self.huge_boulder_button.handle_event(event)
-            # Add debug button event handling
             self.debug_level_button.handle_event(event)
             self.debug_money_button.handle_event(event)
-        
+            
+        # ... rest of existing handle_events code ...
         # Handle continuous jumping when key is held
         keys = pygame.key.get_pressed()
         if (keys[pygame.K_SPACE] or keys[pygame.K_w] or keys[pygame.K_UP]) and self.jump_cooldown <= 0 and self.is_grounded:
@@ -582,13 +655,13 @@ class Game:
 
             # Check if any boulder is in the detection area at the top
             hill_top_x = self.width * 4.35 // 8
-            hill_top_y = self.height - 170  # Moved up by 50 pixels
+            hill_top_y = self.height - 200  # Raise by 30 pixels
             boulder_detected = False
             
             # Define bottom sensor areas
             left_sensor_x = self.width * 3 // 8
             right_sensor_x = self.width * 5.7 // 8
-            sensor_y = self.height - 20
+            sensor_y = self.height - 50  # Raise by 30 pixels
             sensor_size = 50
 
             if self.current_boulder and self.current_boulder['state'] == 'normal':
@@ -650,17 +723,16 @@ class Game:
             # Clear the screen
             self.screen.fill((135, 206, 235))  # Fill with sky blue color
             self.draw_clouds()  # Draw clouds
-            self.draw_hill()  # Draw filled hill
             self.draw_particles()  # Draw particles behind the hill
-            self.draw_strength_stats()  # Add this line
+            self.draw_hill()  # Draw filled hill
+            self.draw_strength_stats()
 
-            # **Draw Static Elements Using Pymunk's Debug Draw**
-            # (Ground, walls, hill)
+            # Draw everything except walls
             self.draw_options.transform = pymunk.Transform(tx=-self.camera_x, ty=0)
+            # Draw all non-wall shapes
             self.space.debug_draw(self.draw_options)
-            self.draw_options.transform = pymunk.Transform.identity()
-
-            # **Draw Boulder Sprites**
+            
+            # Draw boulder sprites
             for boulder in [self.current_boulder] + self.crushing_boulders:
                 if boulder is None:
                     continue
@@ -695,34 +767,24 @@ class Game:
                 # Blit the rotated sprite onto the screen
                 self.screen.blit(rotated_sprite, rotated_rect.topleft)
 
-            # **Draw UI Elements**
-            # Add money display
-            money_text = self.font.render(f"$ {self.money}", True, (22,129,24))
-            
-            # Draw money display right-aligned
-            money_text = self.money_font.render(f"$ {self.money}", True, (22,129,24))
-            money_rect = money_text.get_rect(right=790, y=20)  # Right-align with 10px padding
-            self.screen.blit(money_text, money_rect)
-            
-            # Draw buttons - only show if previous size is unlocked
-            self.small_boulder_button.draw(self.screen)
-            if self.unlocked_sizes[40]:
-                self.medium_boulder_button.draw(self.screen)
-            if self.unlocked_sizes[50]:
-                self.large_boulder_button.draw(self.screen)
-            if self.unlocked_sizes[80]:
-                self.huge_boulder_button.draw(self.screen)
+            # Draw grass
+            self.draw_grass()
+            self.draw_grass_debug_controls()
 
-            # Update button states based on unlocks and money
-            self.medium_boulder_button.enabled = self.unlocked_sizes[40] and (self.unlocked_sizes[50] or self.money >= 10)
-            self.large_boulder_button.enabled = self.unlocked_sizes[50] and (self.unlocked_sizes[80] or self.money >= 100)
-            self.huge_boulder_button.enabled = self.unlocked_sizes[80] and (self.unlocked_sizes[120] or self.money >= 1000)
+            # Draw only walls last (without creating a new space)
+            for wall in self.walls:
+                p1 = wall.a
+                p2 = wall.b
+                pygame.draw.line(
+                    self.screen,
+                    pygame.Color('gray'),
+                    (p1.x - self.camera_x, p1.y - 30),  # Raise by 30 pixels
+                    (p2.x - self.camera_x, p2.y - 30),  # Raise by 30 pixels
+                    5
+                )
             
-            # Update and draw fragments (remove these lines)
-            # self.update_boulder_fragments()
-            # self.draw_boulder_fragments()
+            self.draw_options.transform = pymunk.Transform.identity()
             
-            # Update the display
             pygame.display.flip()
             self.clock.tick(60)
 
@@ -733,40 +795,6 @@ class Game:
         self.strength_xp += xp_needed
         self.level_up()
 
-    # def export_map(self, filename="map.png"):
-    #     # Create a surface with the size of the entire map
-    #     map_surface = pygame.Surface((self.width, self.height))
-
-    #     # Fill the surface with the background color
-    #     map_surface.fill((135, 206, 235))  # Sky blue color
-
-    #     # Draw clouds
-    #     for cloud in self.clouds:
-    #         x, y, width, height, speed, opacity, cloud_type = cloud
-    #         cloud_surface = pygame.Surface((width, height), pygame.SRCALPHA)
-    #         cloud_surface.blit(pygame.transform.scale(self.cloud_sprite_sheet.subsurface((cloud_type * 32, 0, 32, 32)), (width, height)), (0, 0))
-    #         cloud_surface.set_alpha(opacity)
-    #         map_surface.blit(cloud_surface, (x, y))
-
-    #     # Draw hill
-    #     hill_points = [
-    #         (self.width * 3 // 8, self.height),
-    #         (self.width * 4.2 // 8, self.height - 120),
-    #         (self.width * 4.5 // 8, self.height - 120),
-    #         (self.width * 5.7 // 8, self.height)
-    #     ]
-    #     pygame.draw.polygon(map_surface, (139, 69, 19), hill_points)
-    #     pygame.draw.lines(map_surface, (139, 69, 19), False, hill_points, 5)
-
-    #     # Draw static elements using Pymunk's debug draw
-    #     draw_options = pymunk.pygame_util.DrawOptions(map_surface)
-    #     self.space.debug_draw(draw_options)
-
-    #     # Save the surface as a PNG file
-    #     pygame.image.save(map_surface, filename)
-    #     print(f"Map exported as {filename}")
-
 if __name__ == "__main__":
     game = Game()
-    # game.export_map()  # Export the map when the game starts
     game.run()
