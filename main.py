@@ -5,6 +5,9 @@ import os
 import math
 import random
 
+# Initialize pygame mixer for audio
+pygame.mixer.init()
+
 class Button:
     def __init__(self, x, y, width, height, text, callback):
         self.rect = pygame.Rect(x, y, width, height)
@@ -39,6 +42,24 @@ class Game:
             vsync=1
         )
 
+        # Create DrawOptions and disable collision points
+        self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
+        self.draw_options.flags = pymunk.SpaceDebugDrawOptions.DRAW_SHAPES  # Only draw shapes, not collision points
+
+        # Load and set up background music
+        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        try:
+            self.music_tracks = [
+                os.path.join(assets_dir, 'Endless-Journey.mp3'),
+                os.path.join(assets_dir, 'Endless-Ascent.mp3')
+            ]
+            self.current_track = 0
+            pygame.mixer.music.load(self.music_tracks[self.current_track])
+            pygame.mixer.music.play()
+            pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)  # Set custom event for when music ends
+        except pygame.error as e:
+            print(f"Failed to load music: {e}")
+
         self.space = pymunk.Space()
         self.space.gravity = (0, 900)
         pygame.display.set_caption("Squaresyphus")
@@ -49,7 +70,6 @@ class Game:
         self.space.collision_slop = 0.0
 
         # **Load Boulder Sprites**
-        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
         try:
             self.boulder_sprite_gray = pygame.image.load(os.path.join(assets_dir, 'boulder_gray.png')).convert_alpha()
         except pygame.error as e:
@@ -121,7 +141,6 @@ class Game:
         self.bottom_sensor_color = (255, 200, 200)  # Light red for bottom sensors
 
         self.clock = pygame.time.Clock()
-        self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
 
         self.jump_cooldown = 0
         self.camera_x = 0
@@ -163,9 +182,23 @@ class Game:
         self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
         self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (100$)", lambda: self.unlock_and_spawn(80))
         self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (1000$)", lambda: self.unlock_and_spawn(120))
-        # Add debug button for instant level up and money particles
-        self.debug_level_button = Button(10, 60, 100, 20, "Level Up", self.debug_level_up)
-        self.debug_money_button = Button(10, 90, 100, 20, "Money Test", lambda: self.spawn_money_particles(10))
+        
+        # Add music state tracking
+        self.music_enabled = True
+        self.current_track = 0
+        
+        # Load music icon
+        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        try:
+            self.music_icon = pygame.image.load(os.path.join(assets_dir, 'music-icon.png')).convert_alpha()
+            # Scale up the icon
+            self.music_icon = pygame.transform.scale(self.music_icon, (32, 32))
+        except pygame.error as e:
+            print(f"Failed to load music icon: {e}")
+            self.music_icon = None
+
+        # Create music toggle button (below money display)
+        self.music_button = Button(20, 65, 32, 32, "", self.toggle_music)
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -295,8 +328,8 @@ class Game:
         # Remove debug level up button drawing
         # self.debug_level_button.draw(self.screen)  # Remove this line
         # Draw debug level up button
-        self.debug_level_button.draw(self.screen)
-        self.debug_money_button.draw(self.screen)
+        # self.debug_level_button.draw(self.screen)  # Remove this line
+        # self.debug_money_button.draw(self.screen)  # Remove this line
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -507,14 +540,24 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+            
+            # Handle music end event
+            if event.type == pygame.USEREVENT + 1:  # Music ended
+                self.current_track = (self.current_track + 1) % len(self.music_tracks)
+                pygame.mixer.music.load(self.music_tracks[self.current_track])
+                if self.music_enabled:
+                    pygame.mixer.music.play()
+                
+            # Add music button handling
+            self.music_button.handle_event(event)
                 
             # Existing event handling...
             self.small_boulder_button.handle_event(event)
             self.medium_boulder_button.handle_event(event)
             self.large_boulder_button.handle_event(event)
             self.huge_boulder_button.handle_event(event)
-            self.debug_level_button.handle_event(event)
-            self.debug_money_button.handle_event(event)
+            # self.debug_level_button.handle_event(event)  # Remove this line
+            # self.debug_money_button.handle_event(event)  # Remove this line
             
         # ... rest of existing handle_events code ...
         # Handle continuous jumping when key is held
@@ -727,7 +770,7 @@ class Game:
                     5
                 )
             
-             # **Draw UI Elements**
+            # **Draw UI Elements**
             # Add money display
             money_text = self.font.render(f"$ {self.money}", True, (22,129,24))
             
@@ -735,6 +778,18 @@ class Game:
             money_text = self.money_font.render(f"$ {self.money}", True, (22,129,24))
             money_rect = money_text.get_rect(right=790, y=20)  # Right-align with 10px padding
             self.screen.blit(money_text, money_rect)
+            
+            # Draw music button and icon
+            if self.music_icon:
+                # Draw button background
+                color = (150, 150, 150) if self.music_enabled else (100, 100, 100)
+                pygame.draw.rect(self.screen, color, self.music_button.rect)
+                
+                # Draw icon with transparency if muted
+                icon = self.music_icon.copy()
+                if not self.music_enabled:
+                    icon.set_alpha(128)  # Make semi-transparent when muted
+                self.screen.blit(icon, self.music_button.rect)
             
             # Draw buttons - only show if previous size is unlocked
             self.small_boulder_button.draw(self.screen)
@@ -761,6 +816,13 @@ class Game:
         xp_needed = self.calculate_xp_required(current_level)
         self.strength_xp += xp_needed
         self.level_up()
+
+    def toggle_music(self):
+        self.music_enabled = not self.music_enabled
+        if self.music_enabled:
+            pygame.mixer.music.unpause()
+        else:
+            pygame.mixer.music.pause()
 
 if __name__ == "__main__":
     game = Game()
