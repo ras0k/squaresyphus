@@ -733,6 +733,40 @@ class Game:
         self.strength_xp += xp_needed
         self.level_up()
 
+    # def export_map(self, filename="map.png"):
+    #     # Create a surface with the size of the entire map
+    #     map_surface = pygame.Surface((self.width, self.height))
+
+    #     # Fill the surface with the background color
+    #     map_surface.fill((135, 206, 235))  # Sky blue color
+
+    #     # Draw clouds
+    #     for cloud in self.clouds:
+    #         x, y, width, height, speed, opacity, cloud_type = cloud
+    #         cloud_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    #         cloud_surface.blit(pygame.transform.scale(self.cloud_sprite_sheet.subsurface((cloud_type * 32, 0, 32, 32)), (width, height)), (0, 0))
+    #         cloud_surface.set_alpha(opacity)
+    #         map_surface.blit(cloud_surface, (x, y))
+
+    #     # Draw hill
+    #     hill_points = [
+    #         (self.width * 3 // 8, self.height),
+    #         (self.width * 4.2 // 8, self.height - 120),
+    #         (self.width * 4.5 // 8, self.height - 120),
+    #         (self.width * 5.7 // 8, self.height)
+    #     ]
+    #     pygame.draw.polygon(map_surface, (139, 69, 19), hill_points)
+    #     pygame.draw.lines(map_surface, (139, 69, 19), False, hill_points, 5)
+
+    #     # Draw static elements using Pymunk's debug draw
+    #     draw_options = pymunk.pygame_util.DrawOptions(map_surface)
+    #     self.space.debug_draw(draw_options)
+
+    #     # Save the surface as a PNG file
+    #     pygame.image.save(map_surface, filename)
+    #     print(f"Map exported as {filename}")
+
 if __name__ == "__main__":
     game = Game()
+    # game.export_map()  # Export the map when the game starts
     game.run()
