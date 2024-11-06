@@ -115,7 +115,7 @@ class Game:
         
         # Add counter for hill passes and money
         self.hill_passes = 0
-        self.money = 8  # Changed from 10 to 8
+        self.money = 88888  # Changed from 10 to 8
         self.last_boulder_detected = False  # Track previous detection state
         self.boulder_at_bottom = False  # Track if boulder has reached bottom
 
@@ -141,9 +141,9 @@ class Game:
         self.font = pygame.font.Font(None, 24)  # Regular font for debug text
         self.money_font = pygame.font.Font(None, 48)  # Bigger font for money display
         
-        # Move buttons to center - calculate x position based on screen width
+        # Move buttons to right side - calculate x position
         button_width = 180
-        button_x = (800 - button_width) // 2  # Center horizontally in 800px window
+        button_x = 800 - button_width - 10  # Right side with 10px padding
         self.small_boulder_button = Button(button_x, 60, button_width, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
         self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
         self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (100$)", lambda: self.unlock_and_spawn(80))
@@ -225,8 +225,8 @@ class Game:
     def draw_strength_stats(self):
         # Draw level text
         current_level = self.calculate_strength_level()
-        equivalent_size = 50 * (1 + (self.strength - 36) / 500)  # Calculate equivalent size
-        level_text = self.font.render(f"STR Level {current_level} (size: {int(equivalent_size)})", True, (0, 0, 0))
+        equivalent_size = 40 + (current_level - 1) * 5  # Adjust size progression
+        level_text = self.font.render(f"STR Level {current_level}", True, (0, 0, 0))
         self.screen.blit(level_text, (10, 10))
 
         # Calculate XP values for display
@@ -235,24 +235,25 @@ class Game:
         current_level_xp = self.strength_xp - xp_in_prev_levels
 
         # Draw XP bar
-        bar_width = 150
-        bar_height = 15
+        bar_width = 200  # Increased width
+        bar_height = 20  # Increased height
         border = 2
         
         # Draw border
-        pygame.draw.rect(self.screen, (0, 0, 0), (10, 50, bar_width, bar_height))
+        pygame.draw.rect(self.screen, (0, 0, 0), (10, 30, bar_width, bar_height))
         # Draw background
-        pygame.draw.rect(self.screen, (200, 200, 200), (10 + border, 50 + border, 
+        pygame.draw.rect(self.screen, (200, 200, 200), (10 + border, 30 + border, 
                         bar_width - 2*border, bar_height - 2*border))
         # Draw progress
         progress = self.calculate_xp_progress()
         if progress > 0:
-            pygame.draw.rect(self.screen, (0, 255, 0), (10 + border, 50 + border,
+            pygame.draw.rect(self.screen, (0, 255, 0), (10 + border, 30 + border,
                            (bar_width - 2*border) * progress, bar_height - 2*border))
 
-        # Draw XP numbers over bar
+        # Draw XP numbers over bar and centered
         xp_text = self.font.render(f"{current_level_xp}/{total_xp_required}xp", True, (0, 0, 0))
-        self.screen.blit(xp_text, (10, 50 - 20))  # Position above the bar
+        xp_text_rect = xp_text.get_rect(center=(10 + bar_width // 2, 30 + bar_height // 2))
+        self.screen.blit(xp_text, xp_text_rect)
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -297,7 +298,7 @@ class Game:
         return boulder_body, boulder_shape
 
     def unlock_and_spawn(self, size):
-        costs = {50: 10, 80: 100, 120: 1000}
+        costs = {50: 10, 80: 100, 120: 500}  # Change huge boulder cost to 500
         rewards = {50: 5, 80: 20, 120: 100}
         
         if not self.unlocked_sizes[size] and self.money >= costs[size]:
@@ -383,7 +384,7 @@ class Game:
         # Right wall
         right_wall_shape = pymunk.Segment(wall_body, (self.width, 0), (self.width, self.height), wall_thickness)
         # Top wall
-        top_wall_shape = pymunk.Segment(wall_body, (0, 0), (self.width, 0), wall_thickness)
+        top_wall_shape = pymunk.Segment(wall_body, (0, 0), (0, self.height), wall_thickness)
         
         for wall in [left_wall_shape, right_wall_shape, top_wall_shape]:
             wall.friction = self.friction
@@ -473,15 +474,14 @@ class Game:
         base_move_force = 100  # Base movement force
         strength = self.strength
         
-        # Scale sisyphus based on strength
-        scale_factor = 1 + (strength - 36) / 500  # 36 is initial strength
+        # Scale sisyphus based on strength directly
         for shape in self.space.shapes:
             if shape.body == self.sisyphus:
                 current_size = shape.get_vertices()[2][0] - shape.get_vertices()[0][0]
-                target_size = 50 * scale_factor
+                target_size = 40 + (self.calculate_strength_level() - 1) * 5  # Adjust size progression
                 if abs(current_size - target_size) > 1:
                     self.space.remove(shape)
-                    new_shape = pymunk.Poly.create_box(self.sisyphus, (50 * scale_factor, 50 * scale_factor))
+                    new_shape = pymunk.Poly.create_box(self.sisyphus, (target_size, target_size))
                     new_shape.friction = self.friction
                     new_shape.collision_type = 1  # Set collision type for resized sisyphus
                     self.space.add(new_shape)
@@ -659,9 +659,9 @@ class Game:
             # Add money display
             money_text = self.font.render(f"$ {self.money}", True, (22,129,24))
             
-            # Draw money display centered
+            # Draw money display right-aligned
             money_text = self.money_font.render(f"$ {self.money}", True, (22,129,24))
-            money_rect = money_text.get_rect(centerx=400, y=20)  # Center horizontally at y=20
+            money_rect = money_text.get_rect(right=790, y=20)  # Right-align with 10px padding
             self.screen.blit(money_text, money_rect)
             
             # Draw buttons - only show if previous size is unlocked
