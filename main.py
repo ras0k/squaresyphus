@@ -3,6 +3,7 @@ import pymunk
 import pymunk.pygame_util
 import os
 import math
+import random  # Add this import for particle effects
 
 class Button:
     def __init__(self, x, y, width, height, text, callback):
@@ -29,8 +30,18 @@ class Game:
     def __init__(self):
         pygame.init()
         self.width, self.height = 1600, 600  # Extended width for a larger game area
-        self.screen = pygame.display.set_mode((800, 600))  # Window size remains the same
-        pygame.display.set_caption("Sisyphus and the Boulder")
+        
+        self.screen = pygame.display.set_mode(
+            (800, 600),
+            pygame.DOUBLEBUF | pygame.HWSURFACE,
+            depth=0,
+            display=0,
+            vsync=1
+        )
+
+        self.space = pymunk.Space()
+        self.space.gravity = (0, 900)
+        pygame.display.set_caption("Squaresyphus")
 
         self.space = pymunk.Space()
         self.space.gravity = (0, 900)
@@ -70,6 +81,8 @@ class Game:
         # Set default values that were previously in sliders
         self.jump_force = 3000
         self.strength = 36
+        self.strength_xp = 0  # Current XP
+        self.strength_level = 1
         self.friction = 0.6
 
         # Track unlocked boulder sizes
@@ -102,7 +115,7 @@ class Game:
         
         # Add counter for hill passes and money
         self.hill_passes = 0
-        self.money = 10  # Changed from 100 to 10
+        self.money = 8  # Changed from 10 to 8
         self.last_boulder_detected = False  # Track previous detection state
         self.boulder_at_bottom = False  # Track if boulder has reached bottom
 
@@ -135,10 +148,110 @@ class Game:
         self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
         self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (100$)", lambda: self.unlock_and_spawn(80))
         self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (1000$)", lambda: self.unlock_and_spawn(120))
+        self.particles = []  # List to store particles
+        self.clouds = self.create_clouds()  # Create clouds
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
         return False  # Returning False tells Pymunk to ignore the collision
+
+    def calculate_xp_required(self, level):
+        # Fixed XP requirements per level
+        requirements = {
+            1: 10,    # Level 1->2: 10 XP
+            2: 20,    # Level 2->3: 20 XP
+            3: 50,    # Level 3->4: 50 XP
+            4: 100,   # Level 4->5: 100 XP
+            5: 200,   # And so on...
+            6: 500,
+            7: 1000,
+            8: 2000,
+        }
+        return requirements.get(level, 5000)  # Default to 5000 XP for very high levels
+
+    def level_up(self):
+        # Apply level up effects
+        current_level = self.calculate_strength_level()
+        # Increase strength by 20 per level
+        self.strength = 36 + (current_level - 1) * 20
+        
+        # You might want to show a level up message or effect here
+        print(f"Level Up! Now level {current_level}")  # Replace with proper visual feedback
+        self.create_level_up_particles()  # Create particles on level up
+
+    def create_level_up_particles(self):
+        # Create particles for visual effect
+        for _ in range(100):  # Number of particles
+            pos = self.sisyphus.position
+            vel = [random.uniform(-2, 2), random.uniform(-2, 2)]
+            self.particles.append([pos, vel, random.randint(2, 5)])  # Position, velocity, size
+
+    def update_particles(self):
+        # Update particle positions and remove old particles
+        for particle in self.particles[:]:
+            particle[0] += particle[1]  # Update position by velocity
+            particle[2] -= 0.1  # Decrease size
+            if particle[2] <= 0:
+                self.particles.remove(particle)
+
+    def draw_particles(self):
+        # Draw particles on the screen
+        for particle in self.particles:
+            pygame.draw.circle(self.screen, (255, 215, 0), (int(particle[0][0] - self.camera_x), int(particle[0][1])), int(particle[2]))
+
+    def calculate_strength_level(self):
+        # Calculate level based on total XP instead of strength
+        level = 1
+        xp = self.strength_xp
+        while True:
+            required = self.calculate_xp_required(level)
+            if xp < required:
+                break
+            xp -= required
+            level += 1
+        return level
+
+    def calculate_xp_progress(self):
+        current_level = self.calculate_strength_level()
+        total_xp = self.calculate_xp_required(current_level)
+        
+        # Calculate XP in current level
+        xp_in_prev_levels = sum(self.calculate_xp_required(l) for l in range(1, current_level))
+        current_level_xp = self.strength_xp - xp_in_prev_levels
+        
+        return current_level_xp / total_xp
+
+    def draw_strength_stats(self):
+        # Draw level text
+        current_level = self.calculate_strength_level()
+        equivalent_size = 50 * (1 + (self.strength - 36) / 500)  # Calculate equivalent size
+        level_text = self.font.render(f"STR Level {current_level} (size: {int(equivalent_size)})", True, (0, 0, 0))
+        self.screen.blit(level_text, (10, 10))
+
+        # Calculate XP values for display
+        total_xp_required = self.calculate_xp_required(current_level)
+        xp_in_prev_levels = sum(self.calculate_xp_required(l) for l in range(1, current_level))
+        current_level_xp = self.strength_xp - xp_in_prev_levels
+
+        # Draw XP bar
+        bar_width = 150
+        bar_height = 15
+        border = 2
+        
+        # Draw border
+        pygame.draw.rect(self.screen, (0, 0, 0), (10, 50, bar_width, bar_height))
+        # Draw background
+        pygame.draw.rect(self.screen, (200, 200, 200), (10 + border, 50 + border, 
+                        bar_width - 2*border, bar_height - 2*border))
+        # Draw progress
+        progress = self.calculate_xp_progress()
+        if progress > 0:
+            pygame.draw.rect(self.screen, (0, 255, 0), (10 + border, 50 + border,
+                           (bar_width - 2*border) * progress, bar_height - 2*border))
+
+        # Draw XP numbers over bar
+        xp_text = self.font.render(f"{current_level_xp}/{total_xp_required}xp", True, (0, 0, 0))
+        self.screen.blit(xp_text, (10, 50 - 20))  # Position above the bar
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -148,6 +261,7 @@ class Game:
         sisyphus_body.position = 400, self.height - sisyphus_size/2
         sisyphus_shape = pymunk.Poly.create_box(sisyphus_body, (sisyphus_size, sisyphus_size))
         sisyphus_shape.friction = self.friction
+        sisyphus_shape.color = pygame.Color('red')  # Change color to red
         
         # Add collision handler to detect ground contact
         def begin_collision(arbiter, space, data):
@@ -251,6 +365,7 @@ class Game:
         ])
         ground_shape.friction = self.friction
         ground_shape.collision_type = 2  # Set collision type for ground
+        ground_shape.color = pygame.Color('brown')  # Change ground color to brown
         self.space.add(ground_body, ground_shape)
         return ground_body
 
@@ -293,10 +408,43 @@ class Game:
             segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
             segment.friction = self.friction
             segment.collision_type = 2  # Set collision type for hill
+            segment.color = pygame.Color('brown')  # Change hill color to brown
             hill_shapes.append(segment)
         
         self.space.add(hill_body, *hill_shapes)
         return hill_body
+
+    def draw_hill(self):
+        hill_points = [
+            (self.width * 3 // 8, self.height),
+            (self.width * 4.2 // 8, self.height - 120),
+            (self.width * 4.5 // 8, self.height - 120),  # Plateau
+            (self.width * 5.7 // 8, self.height)
+        ]
+        pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill_points])  # Fill hill
+        pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill_points], 5)  # Draw hill stroke
+
+    def create_clouds(self):
+        clouds = []
+        for _ in range(5):  # Number of clouds
+            x = random.randint(0, self.width)
+            y = random.randint(0, 200)  # Clouds in the upper part of the screen
+            width = random.randint(80, 150)  # Random width
+            height = random.randint(40, 80)  # Random height
+            speed = random.uniform(0.1, 0.5)  # Random speed, slower for more parallax
+            opacity = int(255 * (0.5 + (width / 150) * 0.5))  # More opaque if further away
+            clouds.append([x, y, width, height, speed, opacity])
+        return clouds
+
+    def draw_clouds(self):
+        for cloud in self.clouds:
+            x, y, width, height, speed, opacity = cloud
+            cloud_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+            pygame.draw.ellipse(cloud_surface, (255, 255, 255, opacity), (0, 0, width, height))  # Draw cloud with opacity
+            self.screen.blit(cloud_surface, (x, y))
+            cloud[0] += speed  # Move cloud right
+            if cloud[0] > self.width:  # Reset cloud position if it goes off screen
+                cloud[0] = -width
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -369,6 +517,7 @@ class Game:
             running = self.handle_events()
             self.move_sisyphus()
             self.update_camera()
+            self.update_particles()  # Update particles
 
             # Update friction for all objects when friction slider changes
             if self.current_boulder and self.current_boulder['state'] == 'normal':
@@ -414,8 +563,26 @@ class Game:
             # Increment counter when boulder enters detection area
             if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
                 self.hill_passes += 1
-                self.money += 1 * self.boulder_reward  # Multiply reward by boulder type
-                self.strength = min(self.strength + 1, 500)
+                self.money += 1 * self.boulder_reward
+                
+                # Calculate XP based on boulder size with fixed values
+                if self.current_boulder:
+                    boulder_radius = self.current_boulder['shape'].radius
+                    xp_gain = {
+                        40: 1,   # Small boulder: 1 XP
+                        50: 5,   # Medium boulder: 5 XP
+                        80: 10,  # Large boulder: 10 XP
+                        120: 20  # Huge boulder: 20 XP
+                    }.get(boulder_radius, 1)
+                    
+                    old_level = self.calculate_strength_level()
+                    self.strength_xp += xp_gain
+                    new_level = self.calculate_strength_level()
+                    
+                    # Check for level up
+                    if new_level > old_level:
+                        self.level_up()
+                
                 self.boulder_at_bottom = False
             
             self.last_boulder_detected = boulder_detected
@@ -438,7 +605,11 @@ class Game:
             self.space.step(1/60.0)
              
             # Clear the screen
-            self.screen.fill((255, 255, 255))
+            self.screen.fill((135, 206, 235))  # Fill with sky blue color
+            self.draw_clouds()  # Draw clouds
+            self.draw_hill()  # Draw filled hill
+            self.draw_strength_stats()  # Add this line
+            self.draw_particles()  # Draw particles
 
             # **Draw Static Elements Using Pymunk's Debug Draw**
             # (Ground, walls, hill)
