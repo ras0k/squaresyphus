@@ -115,7 +115,7 @@ class Game:
         
         # Add counter for hill passes and money
         self.hill_passes = 0
-        self.money = 88888  # Changed from 10 to 8
+        self.money = 0
         self.last_boulder_detected = False  # Track previous detection state
         self.boulder_at_bottom = False  # Track if boulder has reached bottom
 
@@ -149,11 +149,16 @@ class Game:
         self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (100$)", lambda: self.unlock_and_spawn(80))
         self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (1000$)", lambda: self.unlock_and_spawn(120))
         self.particles = []  # List to store particles
-        self.cloud_sprite_sheet = pygame.image.load(os.path.join(assets_dir, 'clouds.png')).convert_alpha()  # Load cloud sprite sheet
+        self.cloud_sprite_sheet = pygame.image.load(os.path.join(assets_dir, 'Clouds-Sheet.png')).convert_alpha()  # Load cloud sprite sheet
         self.clouds = self.create_clouds()  # Create clouds
-        self.boulder_fragments = []  # Add this line near other particle-related properties
-        # Add debug button for instant level up
+        # Remove boulder fragments related code
+        # Remove debug button for instant level up
+        # self.debug_level_button = Button(10, 60, 100, 20, "Level Up", self.debug_level_up)  # Remove this line
+        self.money_particles = []  # List to store money particles
+        self.money_texts = []  # List to store money text effects
+        # Add debug button for instant level up and money particles
         self.debug_level_button = Button(10, 60, 100, 20, "Level Up", self.debug_level_up)
+        self.debug_money_button = Button(10, 90, 100, 20, "Money Test", lambda: self.spawn_money_particles(10))
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -186,10 +191,10 @@ class Game:
 
     def create_level_up_particles(self):
         # Create particles for visual effect
-        for _ in range(100):  # Number of particles
+        for _ in range(200):  # Increased number of particles
             pos = self.sisyphus.position
-            vel = [random.uniform(-2, 2), random.uniform(-2, 2)]
-            self.particles.append([pos, vel, random.randint(2, 5)])  # Position, velocity, size
+            vel = [random.uniform(-4, 4), random.uniform(-4, 4)]  # Increased velocity
+            self.particles.append([pos, vel, random.randint(4, 10)])  # Increased size
 
     def update_particles(self):
         # Update particle positions and remove old particles
@@ -198,11 +203,32 @@ class Game:
             particle[2] -= 0.1  # Decrease size
             if particle[2] <= 0:
                 self.particles.remove(particle)
+        # Update money texts
+        for text in self.money_texts[:]:
+            text['pos'][1] -= 1  # Move text up
+            text['life'] -= 0.02  # Decrease life
+            if text['life'] <= 0:
+                self.money_texts.remove(text)
 
     def draw_particles(self):
         # Draw particles on the screen
         for particle in self.particles:
             pygame.draw.circle(self.screen, (255, 215, 0), (int(particle[0][0] - self.camera_x), int(particle[0][1])), int(particle[2]))
+        # Draw money texts
+        for text in self.money_texts:
+            font = pygame.font.Font(None, text['size'])
+            text_surface = font.render(text['text'], True, (0, 100, 0))  # Darker green color
+            text_surface.set_alpha(int(255 * text['life']))  # Fade out
+            self.screen.blit(text_surface, (int(text['pos'][0] - self.camera_x), int(text['pos'][1])))
+
+    def spawn_money_particles(self, amount):
+        # Only create money text effect, no particles
+        self.money_texts.append({
+            'text': f"+${amount}", 
+            'pos': [self.width * 4.15 // 8, self.height - 300],
+            'life': 1.0, 
+            'size': 48
+        })
 
     def calculate_strength_level(self):
         # Calculate level based on total XP instead of strength
@@ -259,8 +285,11 @@ class Game:
         xp_text_rect = xp_text.get_rect(center=(10 + bar_width // 2, 30 + bar_height // 2))
         self.screen.blit(xp_text, xp_text_rect)
         
+        # Remove debug level up button drawing
+        # self.debug_level_button.draw(self.screen)  # Remove this line
         # Draw debug level up button
         self.debug_level_button.draw(self.screen)
+        self.debug_money_button.draw(self.screen)
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -347,90 +376,13 @@ class Game:
         self.spawn_cooldown = 60
 
     def create_boulder_fragments(self, boulder):
-        # Create fragments when a boulder is destroyed
-        center_x = boulder['body'].position.x
-        center_y = boulder['body'].position.y
-        radius = boulder['shape'].radius
-        
-        # Create more fragments and make them more dynamic
-        num_fragments = random.randint(12, 16)  # Increased number of fragments
-        for _ in range(num_fragments):
-            # More spread in initial position
-            pos_x = center_x + random.uniform(-radius/3, radius/3)
-            pos_y = center_y + random.uniform(-radius/3, radius/3)
-            
-            # More dynamic velocities
-            vel_x = random.uniform(-8, 8)  # Increased horizontal spread
-            vel_y = random.uniform(-12, -4)  # More upward momentum
-            
-            # Vary fragment sizes more
-            size = random.uniform(radius/6, radius/3)  # Smaller fragments
-            
-            # Faster rotation
-            rotation = random.uniform(0, 360)
-            rot_speed = random.uniform(-15, 15)  # Increased rotation speed
-            
-            # More varied shapes
-            vertices = []
-            num_vertices = random.randint(3, 6)  # Can be more complex shapes
-            for i in range(num_vertices):
-                angle = (i / num_vertices) * 2 * math.pi
-                vert_x = math.cos(angle) * size * random.uniform(0.5, 1.5)
-                vert_y = math.sin(angle) * size * random.uniform(0.5, 1.5)
-                vertices.append((vert_x, vert_y))
-            
-            self.boulder_fragments.append({
-                'pos': [pos_x, pos_y],
-                'vel': [vel_x, vel_y],
-                'size': size,
-                'vertices': vertices,
-                'rotation': rotation,
-                'rot_speed': rot_speed,
-                'life': 1.0
-            })
+        pass  # Remove the implementation
 
     def update_boulder_fragments(self):
-        # Update fragment positions and properties
-        for fragment in self.boulder_fragments[:]:
-            # Apply gravity
-            fragment['vel'][1] += 0.5
-            
-            # Update position
-            fragment['pos'][0] += fragment['vel'][0]
-            fragment['pos'][1] += fragment['vel'][1]
-            
-            # Update rotation
-            fragment['rotation'] += fragment['rot_speed']
-            
-            # Decrease lifetime
-            fragment['life'] -= 0.02
-            
-            # Remove dead fragments
-            if fragment['life'] <= 0:
-                self.boulder_fragments.remove(fragment)
+        pass  # Remove the implementation
 
     def draw_boulder_fragments(self):
-        for fragment in self.boulder_fragments:
-            # Calculate fragment vertices with rotation
-            rotated_verts = []
-            center_x, center_y = fragment['pos']
-            rotation_rad = math.radians(fragment['rotation'])
-            
-            for vertex in fragment['vertices']:
-                # Rotate vertex around origin
-                x = vertex[0] * math.cos(rotation_rad) - vertex[1] * math.sin(rotation_rad)
-                y = vertex[0] * math.sin(rotation_rad) + vertex[1] * math.cos(rotation_rad)
-                
-                # Translate to fragment position
-                screen_x = center_x - self.camera_x + x
-                screen_y = center_y + y
-                rotated_verts.append((screen_x, screen_y))
-            
-            # Draw fragment with fading opacity
-            color = (139, 69, 19, int(255 * fragment['life']))  # Brown color with fade
-            surface = pygame.Surface((fragment['size'] * 2, fragment['size'] * 2), pygame.SRCALPHA)
-            pygame.draw.polygon(surface, color, rotated_verts)
-            self.screen.blit(surface, (0, 0))
+        pass  # Remove the implementation
 
     def clear_boulders(self):
         if self.current_boulder:
@@ -515,11 +467,11 @@ class Game:
         for _ in range(15):  # Increase number of clouds to 15
             x = random.randint(0, self.width)
             y = random.randint(0, 200)  # Clouds in the upper part of the screen
-            width = 64  # Cloud width (doubled)
-            height = 64  # Cloud height (doubled)
-            speed = random.uniform(0.1, 0.5)  # Random speed, slower for more parallax
-            opacity = int(255 * (0.5 + (width / 150) * 0.5))  # More opaque if further away
-            cloud_type = random.choice([0, 1])  # Randomly choose between the first and second cloud
+            width = 96  # Cloud width (tripled)
+            height = 96  # Cloud height (tripled)
+            speed = random.uniform(0.1, 0.4)  # Random speed, slower for more parallax
+            opacity = int(255 * (1 - speed))  # More opaque if faster
+            cloud_type = random.choice([0, 1, 2, 3])  # Randomly choose between the first and second cloud
             clouds.append([x, y, width, height, speed, opacity, cloud_type])
         return clouds
 
@@ -545,6 +497,7 @@ class Game:
             self.huge_boulder_button.handle_event(event)
             # Add debug button event handling
             self.debug_level_button.handle_event(event)
+            self.debug_money_button.handle_event(event)
         
         # Handle continuous jumping when key is held
         keys = pygame.key.get_pressed()
@@ -653,6 +606,7 @@ class Game:
             if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
                 self.hill_passes += 1
                 self.money += 1 * self.boulder_reward
+                self.spawn_money_particles(1 * self.boulder_reward)  # Spawn money particles
                 
                 # Calculate XP based on boulder size with fixed values
                 if self.current_boulder:
@@ -697,8 +651,8 @@ class Game:
             self.screen.fill((135, 206, 235))  # Fill with sky blue color
             self.draw_clouds()  # Draw clouds
             self.draw_hill()  # Draw filled hill
+            self.draw_particles()  # Draw particles behind the hill
             self.draw_strength_stats()  # Add this line
-            self.draw_particles()  # Draw particles
 
             # **Draw Static Elements Using Pymunk's Debug Draw**
             # (Ground, walls, hill)
@@ -764,9 +718,9 @@ class Game:
             self.large_boulder_button.enabled = self.unlocked_sizes[50] and (self.unlocked_sizes[80] or self.money >= 100)
             self.huge_boulder_button.enabled = self.unlocked_sizes[80] and (self.unlocked_sizes[120] or self.money >= 1000)
             
-            # Update and draw fragments (add before pygame.display.flip())
-            self.update_boulder_fragments()
-            self.draw_boulder_fragments()
+            # Update and draw fragments (remove these lines)
+            # self.update_boulder_fragments()
+            # self.draw_boulder_fragments()
             
             # Update the display
             pygame.display.flip()
