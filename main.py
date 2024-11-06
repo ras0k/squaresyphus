@@ -76,7 +76,7 @@ class Game:
         self.small_boulder_button = Button(button_x, 60, button_width, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
         self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
         self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (100$)", lambda: self.unlock_and_spawn(80))
-        self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (1000$)", lambda: self.unlock_and_spawn(120))
+        self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (500$)", lambda: self.unlock_and_spawn(120))
         
         # Set default values that were previously in sliders
         self.jump_force = 3000
@@ -151,6 +151,9 @@ class Game:
         self.particles = []  # List to store particles
         self.cloud_sprite_sheet = pygame.image.load(os.path.join(assets_dir, 'clouds.png')).convert_alpha()  # Load cloud sprite sheet
         self.clouds = self.create_clouds()  # Create clouds
+        self.boulder_fragments = []  # Add this line near other particle-related properties
+        # Add debug button for instant level up
+        self.debug_level_button = Button(10, 60, 100, 20, "Level Up", self.debug_level_up)
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -175,10 +178,11 @@ class Game:
         current_level = self.calculate_strength_level()
         # Increase strength by 20 per level
         self.strength = 36 + (current_level - 1) * 20
+        # Add jump force scaling
+        self.jump_force = 3000 + (current_level - 1) * 100
         
-        # You might want to show a level up message or effect here
-        print(f"Level Up! Now level {current_level}")  # Replace with proper visual feedback
-        self.create_level_up_particles()  # Create particles on level up
+        print(f"Level Up! Now level {current_level}")
+        self.create_level_up_particles()
 
     def create_level_up_particles(self):
         # Create particles for visual effect
@@ -254,6 +258,9 @@ class Game:
         xp_text = self.font.render(f"{current_level_xp}/{total_xp_required}xp", True, (0, 0, 0))
         xp_text_rect = xp_text.get_rect(center=(10 + bar_width // 2, 30 + bar_height // 2))
         self.screen.blit(xp_text, xp_text_rect)
+        
+        # Draw debug level up button
+        self.debug_level_button.draw(self.screen)
 
     def create_sisyphus(self):
         sisyphus_size = 50
@@ -323,30 +330,107 @@ class Game:
         if not self.unlocked_sizes[size]:
             return
             
+        # Create fragments from old boulder before removing it
         if self.current_boulder is not None:
-            self.crush_boulder(self.current_boulder)
+            self.create_boulder_fragments(self.current_boulder)
+            # Immediately remove old boulder instead of waiting for crush animation
+            self.space.remove(self.current_boulder['body'], self.current_boulder['shape'])
             self.current_boulder = None
 
+        # Immediately create new boulder
         boulder_body, boulder_shape = self.create_boulder(size)
         new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
         self.current_boulder = new_boulder
         self.boulder_reward = reward
         
-        # Set spawn cooldown to 5 seconds (300 frames at 60 FPS)
-        self.spawn_cooldown = 300
+        # Set spawn cooldown
+        self.spawn_cooldown = 60
 
-    def crush_boulder(self, boulder):
-        # Change state to 'crushing'
-        boulder['state'] = 'crushing'
-        boulder['timer'] = 60  # Duration of the 'crushing' animation (1 second if 60 FPS)
-        # Set shape color to orange if a separate sprite exists; otherwise, handle tinting during rendering
-        if self.has_orange_sprite:
-            boulder['shape'].color = pygame.Color('orange')
-        else:
-            pass  # Tinting handled during rendering
-        # Change collision type to 4 (crushing boulders)
-        boulder['shape'].collision_type = 4
-        self.crushing_boulders.append(boulder)
+    def create_boulder_fragments(self, boulder):
+        # Create fragments when a boulder is destroyed
+        center_x = boulder['body'].position.x
+        center_y = boulder['body'].position.y
+        radius = boulder['shape'].radius
+        
+        # Create more fragments and make them more dynamic
+        num_fragments = random.randint(12, 16)  # Increased number of fragments
+        for _ in range(num_fragments):
+            # More spread in initial position
+            pos_x = center_x + random.uniform(-radius/3, radius/3)
+            pos_y = center_y + random.uniform(-radius/3, radius/3)
+            
+            # More dynamic velocities
+            vel_x = random.uniform(-8, 8)  # Increased horizontal spread
+            vel_y = random.uniform(-12, -4)  # More upward momentum
+            
+            # Vary fragment sizes more
+            size = random.uniform(radius/6, radius/3)  # Smaller fragments
+            
+            # Faster rotation
+            rotation = random.uniform(0, 360)
+            rot_speed = random.uniform(-15, 15)  # Increased rotation speed
+            
+            # More varied shapes
+            vertices = []
+            num_vertices = random.randint(3, 6)  # Can be more complex shapes
+            for i in range(num_vertices):
+                angle = (i / num_vertices) * 2 * math.pi
+                vert_x = math.cos(angle) * size * random.uniform(0.5, 1.5)
+                vert_y = math.sin(angle) * size * random.uniform(0.5, 1.5)
+                vertices.append((vert_x, vert_y))
+            
+            self.boulder_fragments.append({
+                'pos': [pos_x, pos_y],
+                'vel': [vel_x, vel_y],
+                'size': size,
+                'vertices': vertices,
+                'rotation': rotation,
+                'rot_speed': rot_speed,
+                'life': 1.0
+            })
+
+    def update_boulder_fragments(self):
+        # Update fragment positions and properties
+        for fragment in self.boulder_fragments[:]:
+            # Apply gravity
+            fragment['vel'][1] += 0.5
+            
+            # Update position
+            fragment['pos'][0] += fragment['vel'][0]
+            fragment['pos'][1] += fragment['vel'][1]
+            
+            # Update rotation
+            fragment['rotation'] += fragment['rot_speed']
+            
+            # Decrease lifetime
+            fragment['life'] -= 0.02
+            
+            # Remove dead fragments
+            if fragment['life'] <= 0:
+                self.boulder_fragments.remove(fragment)
+
+    def draw_boulder_fragments(self):
+        for fragment in self.boulder_fragments:
+            # Calculate fragment vertices with rotation
+            rotated_verts = []
+            center_x, center_y = fragment['pos']
+            rotation_rad = math.radians(fragment['rotation'])
+            
+            for vertex in fragment['vertices']:
+                # Rotate vertex around origin
+                x = vertex[0] * math.cos(rotation_rad) - vertex[1] * math.sin(rotation_rad)
+                y = vertex[0] * math.sin(rotation_rad) + vertex[1] * math.cos(rotation_rad)
+                
+                # Translate to fragment position
+                screen_x = center_x - self.camera_x + x
+                screen_y = center_y + y
+                rotated_verts.append((screen_x, screen_y))
+            
+            # Draw fragment with fading opacity
+            color = (139, 69, 19, int(255 * fragment['life']))  # Brown color with fade
+            surface = pygame.Surface((fragment['size'] * 2, fragment['size'] * 2), pygame.SRCALPHA)
+            pygame.draw.polygon(surface, color, rotated_verts)
+            self.screen.blit(surface, (0, 0))
 
     def clear_boulders(self):
         if self.current_boulder:
@@ -459,6 +543,8 @@ class Game:
             self.medium_boulder_button.handle_event(event)
             self.large_boulder_button.handle_event(event)
             self.huge_boulder_button.handle_event(event)
+            # Add debug button event handling
+            self.debug_level_button.handle_event(event)
         
         # Handle continuous jumping when key is held
         keys = pygame.key.get_pressed()
@@ -678,9 +764,20 @@ class Game:
             self.large_boulder_button.enabled = self.unlocked_sizes[50] and (self.unlocked_sizes[80] or self.money >= 100)
             self.huge_boulder_button.enabled = self.unlocked_sizes[80] and (self.unlocked_sizes[120] or self.money >= 1000)
             
+            # Update and draw fragments (add before pygame.display.flip())
+            self.update_boulder_fragments()
+            self.draw_boulder_fragments()
+            
             # Update the display
             pygame.display.flip()
             self.clock.tick(60)
+
+    def debug_level_up(self):
+        # Add enough XP to reach next level
+        current_level = self.calculate_strength_level()
+        xp_needed = self.calculate_xp_required(current_level)
+        self.strength_xp += xp_needed
+        self.level_up()
 
 if __name__ == "__main__":
     game = Game()
