@@ -207,7 +207,7 @@ class Game:
     def calculate_xp_required(self, level):
         # Fixed XP requirements per level
         requirements = {
-            1: 10,    # Level 1->2: 10 XP
+            1: 5,    # Level 1->2: 10 XP
             2: 20,    # Level 2->3: 20 XP
             3: 50,    # Level 3->4: 50 XP
             4: 100,   # Level 4->5: 100 XP
