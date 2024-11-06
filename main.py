@@ -149,6 +149,7 @@ class Game:
         self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (100$)", lambda: self.unlock_and_spawn(80))
         self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (1000$)", lambda: self.unlock_and_spawn(120))
         self.particles = []  # List to store particles
+        self.cloud_sprite_sheet = pygame.image.load(os.path.join(assets_dir, 'clouds.png')).convert_alpha()  # Load cloud sprite sheet
         self.clouds = self.create_clouds()  # Create clouds
 
     def ignore_collision(self, arbiter, space, data):
@@ -365,7 +366,7 @@ class Game:
         ])
         ground_shape.friction = self.friction
         ground_shape.collision_type = 2  # Set collision type for ground
-        ground_shape.color = pygame.Color('brown')  # Change ground color to brown
+        ground_shape.color = pygame.Color(139, 69, 19)  # Change ground color to match mountain fill color
         self.space.add(ground_body, ground_shape)
         return ground_body
 
@@ -408,7 +409,7 @@ class Game:
             segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
             segment.friction = self.friction
             segment.collision_type = 2  # Set collision type for hill
-            segment.color = pygame.Color('brown')  # Change hill color to brown
+            segment.color = pygame.Color(139, 69, 19)  # Change hill color to match mountain fill color
             hill_shapes.append(segment)
         
         self.space.add(hill_body, *hill_shapes)
@@ -426,21 +427,23 @@ class Game:
 
     def create_clouds(self):
         clouds = []
-        for _ in range(5):  # Number of clouds
+        for _ in range(15):  # Increase number of clouds to 15
             x = random.randint(0, self.width)
             y = random.randint(0, 200)  # Clouds in the upper part of the screen
-            width = random.randint(80, 150)  # Random width
-            height = random.randint(40, 80)  # Random height
+            width = 64  # Cloud width (doubled)
+            height = 64  # Cloud height (doubled)
             speed = random.uniform(0.1, 0.5)  # Random speed, slower for more parallax
             opacity = int(255 * (0.5 + (width / 150) * 0.5))  # More opaque if further away
-            clouds.append([x, y, width, height, speed, opacity])
+            cloud_type = random.choice([0, 1])  # Randomly choose between the first and second cloud
+            clouds.append([x, y, width, height, speed, opacity, cloud_type])
         return clouds
 
     def draw_clouds(self):
         for cloud in self.clouds:
-            x, y, width, height, speed, opacity = cloud
+            x, y, width, height, speed, opacity, cloud_type = cloud
             cloud_surface = pygame.Surface((width, height), pygame.SRCALPHA)
-            pygame.draw.ellipse(cloud_surface, (255, 255, 255, opacity), (0, 0, width, height))  # Draw cloud with opacity
+            cloud_surface.blit(pygame.transform.scale(self.cloud_sprite_sheet.subsurface((cloud_type * 32, 0, 32, 32)), (width, height)), (0, 0))  # Draw cloud from sprite sheet and scale it
+            cloud_surface.set_alpha(opacity)  # Set opacity
             self.screen.blit(cloud_surface, (x, y))
             cloud[0] += speed  # Move cloud right
             if cloud[0] > self.width:  # Reset cloud position if it goes off screen
