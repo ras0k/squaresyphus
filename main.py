@@ -825,10 +825,11 @@ class Game:
             
             if self.music_enabled:
                 # Fading in
-                self.music_volume = progress * self.target_volume
+                self.music_volume = min(progress * self.target_volume, self.target_volume)
             else:
-                # Fading out
-                self.music_volume = (1.0 - progress) * 0.7
+                # Fading out - start from current volume instead of max volume
+                start_volume = self.music_volume
+                self.music_volume = max(0, start_volume * (1.0 - progress))
             
             pygame.mixer.music.set_volume(self.music_volume)
             
