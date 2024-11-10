@@ -15,6 +15,7 @@ class Button:
         self.callback = callback
         self.font = pygame.font.Font(None, 24)
         self.enabled = True
+        self.visible = True  # Add visibility flag
 
     def draw(self, screen):
         color = (150, 150, 150) if self.enabled else (100, 100, 100)
@@ -26,7 +27,7 @@ class Button:
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.rect.collidepoint(event.pos) and self.enabled:
+            if self.rect.collidepoint(event.pos) and self.enabled and self.visible:  # Check visibility
                 self.callback()
 
 class InputBox:
@@ -95,10 +96,24 @@ class Game:
                 os.path.join(assets_dir, 'Endless-Journey.mp3'),
                 os.path.join(assets_dir, 'Endless-Ascent.mp3')
             ]
-            self.current_track = 0
-            pygame.mixer.music.set_volume(0.0)  # Set volume to 0 before loading
+            # Initialize music system with random track
+            self.music_enabled = True
+            self.music_volume = 0.0
+            self.target_volume = 0.7
+            self.initial_fade_frames = 300  # 5 seconds at 60fps
+            self.toggle_fade_frames = 60    # 1 second at 60fps
+            self.current_fade_frame = 0
+            self.is_fading = True          
+            self.is_initial_fade = True    
+            
+            # Pick random starting track
+            self.current_track = 1
+            
+            # Start playing the random track
             pygame.mixer.music.load(self.music_tracks[self.current_track])
-            pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
+            pygame.mixer.music.set_volume(0.0)
+            pygame.mixer.music.play(-1)
+            
         except pygame.error as e:
             print(f"Failed to load music: {e}")
 
@@ -227,33 +242,40 @@ class Game:
         
         # Add music state tracking
         self.music_enabled = True
-        self.current_track = 0
+        self.current_track = 1
         
-        # Load music icon
+        # Load music icons
         assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
         try:
             self.music_icon = pygame.image.load(os.path.join(assets_dir, 'music-icon.png')).convert_alpha()
-            # Scale up the icon
+            self.next_icon = pygame.image.load(os.path.join(assets_dir, 'next-icon.png')).convert_alpha()
+            # Scale icons
             self.music_icon = pygame.transform.scale(self.music_icon, (32, 32))
+            self.next_icon = pygame.transform.scale(self.next_icon, (32, 32))
         except pygame.error as e:
-            print(f"Failed to load music icon: {e}")
+            print(f"Failed to load music icons: {e}")
             self.music_icon = None
+            self.next_icon = None
 
-        # Create music toggle button (below money display)
+        # Create music buttons
         self.music_button = Button(20, 65, 32, 32, "", self.toggle_music)
+        self.next_button = Button(60, 65, 32, 32, "", self.next_track)  # Position it right after music button
 
         # Load sound effects with adjusted volume
         try:
             self.level_up_sound = pygame.mixer.Sound(os.path.join(assets_dir, 'level-up.mp3'))
             self.money_pickup_sound = pygame.mixer.Sound(os.path.join(assets_dir, 'money-pickup.mp3'))
+            self.jump_sound = pygame.mixer.Sound(os.path.join(assets_dir, 'jump.mp3'))  # Add jump sound
             
             # Adjust volumes
             self.level_up_sound.set_volume(0.2)  # Lowered from 0.7 to 0.2
-            self.money_pickup_sound.set_volume(0.6)
+            self.money_pickup_sound.set_volume(0.4)
+            self.jump_sound.set_volume(0.5)  # Set jump sound volume
         except pygame.error as e:
             print(f"Failed to load sound effects: {e}")
             self.level_up_sound = None
             self.money_pickup_sound = None
+            self.jump_sound = None
 
         # Load splash screen
         try:
@@ -265,13 +287,12 @@ class Game:
             self.splash_screen = None
 
         # Music fade-in variables
-        self.music_volume = 0.0
+        self.music_volume = 0.7  # Start at full volume
         self.target_volume = 0.7  # Target volume for music
-        self.fade_duration = 5.0  # Seconds to fade in
-        self.fade_start_time = None  # We'll set this when the main game starts
-        
-        # Set initial music volume to 0 and don't start playing yet
-        pygame.mixer.music.set_volume(0.0)
+        self.fade_steps = 60  # Number of steps for fade (30 frames = 0.5 seconds at 60fps)
+        self.current_fade_step = 0
+        self.is_fading = False
+        pygame.mixer.music.set_volume(self.music_volume)
 
         # Add hill texture with fixed position
         assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
@@ -286,6 +307,47 @@ class Game:
         # Fixed hill position
         self.hill_x_offset = 200
         self.hill_y_offset = 125
+
+        # Music fade variables
+        self.music_volume = 0.0
+        self.target_volume = 0.7
+        self.fade_steps = 120  # 2 seconds at 60fps
+        self.current_fade_step = 0
+        self.is_fading = False
+        self.current_track = random.randint(0, len(self.music_tracks) - 1)
+        self.music_enabled = True
+        pygame.mixer.music.set_volume(0.0)
+        
+        # Load and start music
+        try:
+            pygame.mixer.music.load(self.music_tracks[self.current_track])
+            pygame.mixer.music.play(-1)  # Start playing immediately but at volume 0
+            self.is_fading = True  # Start fading in
+        except pygame.error as e:
+            print(f"Failed to load music: {e}")
+
+        # Music system variables
+        self.music_enabled = True
+        self.music_volume = 0.0
+        self.target_volume = 0.7
+        self.initial_fade_frames = 300  # 5 seconds at 60fps
+        self.toggle_fade_frames = 60    # 1 second at 60fps
+        self.current_fade_frame = 0
+        self.is_fading = True          # Start with initial fade-in
+        self.is_initial_fade = True    # Track if this is the first fade
+        
+        # Start playing music immediately (at volume 0)
+        try:
+            pygame.mixer.music.load(self.music_tracks[self.current_track])
+            pygame.mixer.music.set_volume(0.0)
+            pygame.mixer.music.play(-1)
+        except pygame.error as e:
+            print(f"Failed to load music: {e}")
+
+        # Add button press tracking
+        self.next_button_pressed = False
+        self.next_button_timer = 0
+        self.next_button_press_duration = 5  # 60 frames = 1 second at 60fps
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -317,7 +379,7 @@ class Game:
         self.create_level_up_particles()
         
         # Play level up sound
-        if self.level_up_sound and self.music_enabled:
+        if self.level_up_sound:
             self.level_up_sound.play()
 
     def create_level_up_particles(self):
@@ -483,9 +545,7 @@ class Game:
         if not self.unlocked_sizes[size]:
             return
             
-        # Create fragments from old boulder before removing it
         if self.current_boulder is not None:
-            self.create_boulder_fragments(self.current_boulder)
             # Immediately remove old boulder instead of waiting for crush animation
             self.space.remove(self.current_boulder['body'], self.current_boulder['shape'])
             self.current_boulder = None
@@ -498,16 +558,7 @@ class Game:
         self.boulder_xp_gain = xp_gain  # Store XP gain for this boulder
         
         # Set spawn cooldown
-        self.spawn_cooldown = 60
-
-    def create_boulder_fragments(self, boulder):
-        pass  # Remove the implementation
-
-    def update_boulder_fragments(self):
-        pass  # Remove the implementation
-
-    def draw_boulder_fragments(self):
-        pass  # Remove the implementation
+        self.spawn_cooldown = 10
 
     def clear_boulders(self):
         if self.current_boulder:
@@ -648,12 +699,11 @@ class Game:
                 
             # Handle UI buttons
             self.music_button.handle_event(event)
+            self.next_button.handle_event(event)
             self.small_boulder_button.handle_event(event)
             self.medium_boulder_button.handle_event(event)
             self.large_boulder_button.handle_event(event)
             self.huge_boulder_button.handle_event(event)
-            # self.debug_level_button.handle_event(event)  # Remove this line
-            # self.debug_money_button.handle_event(event)  # Remove this line
             
         # ... rest of existing handle_events code ...
         # Handle continuous jumping when key is held
@@ -700,6 +750,10 @@ class Game:
             self.sisyphus.apply_impulse_at_world_point((move_force, 0), self.sisyphus.position)
 
     def jump(self):
+        # Play jump sound
+        if self.jump_sound:
+            self.jump_sound.play()
+            
         # Apply jump force in world coordinates (always upwards)
         jump_force = (0, -self.jump_force)
         self.sisyphus.apply_impulse_at_world_point(jump_force, self.sisyphus.position)
@@ -750,21 +804,65 @@ class Game:
         
         return True
 
+    def toggle_music(self):
+        self.music_enabled = not self.music_enabled
+        self.is_fading = True
+        self.is_initial_fade = False  # This is a toggle fade
+        self.current_fade_frame = 0
+        
+        if not self.music_enabled:
+            self.target_volume = 0.0
+        else:
+            self.target_volume = 0.7
+            if not pygame.mixer.music.get_busy():
+                pygame.mixer.music.unpause()
+
     def update_music_fade(self):
-        if self.fade_start_time is None:
-            return
+        if self.is_fading:
+            self.current_fade_frame += 1
+            fade_frames = self.initial_fade_frames if self.is_initial_fade else self.toggle_fade_frames
+            progress = min(self.current_fade_frame / fade_frames, 1.0)
             
-        if self.music_volume < self.target_volume:
-            current_time = pygame.time.get_ticks()
-            elapsed = (current_time - self.fade_start_time) / 1000.0  # Convert to seconds
-            
-            # Calculate new volume based on elapsed time
-            self.music_volume = min(self.target_volume, 
-                                  (elapsed / self.fade_duration) * self.target_volume)
-            
-            # Set the new volume
             if self.music_enabled:
-                pygame.mixer.music.set_volume(self.music_volume)
+                # Fading in
+                self.music_volume = progress * self.target_volume
+            else:
+                # Fading out
+                self.music_volume = (1.0 - progress) * 0.7
+            
+            pygame.mixer.music.set_volume(self.music_volume)
+            
+            if self.current_fade_frame >= fade_frames:
+                self.is_fading = False
+                self.is_initial_fade = False
+                if not self.music_enabled:
+                    pygame.mixer.music.pause()
+
+    def next_track(self):
+        # Visual feedback for button
+        self.next_button_pressed = True
+        self.next_button_timer = self.next_button_press_duration
+        
+        # Switch to next track
+        self.current_track = (self.current_track + 1) % len(self.music_tracks)
+        try:
+            pygame.mixer.music.load(self.music_tracks[self.current_track])
+            pygame.mixer.music.set_volume(0.0)  # Start at 0 volume
+            pygame.mixer.music.play(-1)
+            
+            # Only start fade-in if music is enabled
+            if self.music_enabled:
+                self.is_fading = True
+                self.is_initial_fade = True  # Use the 5-second fade
+                self.current_fade_frame = 0
+            else:
+                # Keep it muted if music is disabled
+                pygame.mixer.music.set_volume(0.0)
+                self.music_volume = 0.0
+                self.is_fading = False
+            
+        except pygame.error as e:
+            pass
 
     def run(self):
         # Show splash screen first
@@ -835,7 +933,7 @@ class Game:
                 self.spawn_money_particles(1 * self.boulder_reward)  # Spawn money particles
                 
                 # Play money pickup sound
-                if self.money_pickup_sound and self.music_enabled:
+                if self.money_pickup_sound:
                     self.money_pickup_sound.play()
                 
                 # Calculate XP based on boulder size with fixed values
@@ -957,41 +1055,33 @@ class Game:
 
             # Draw boulder buttons with next potential upgrade
             # Small boulder is always shown and enabled
+            self.small_boulder_button.visible = True
             self.small_boulder_button.enabled = True
             self.small_boulder_button.draw(self.screen)
             
-            # Medium boulder (show if unlocked or can afford)
-            if self.unlocked_sizes[50]:
-                self.medium_boulder_button.enabled = True
+            # Medium boulder
+            if self.unlocked_sizes[50] or self.money >= 10 or self.unlocked_sizes[40]:
+                self.medium_boulder_button.visible = True
+                self.medium_boulder_button.enabled = self.unlocked_sizes[50] or self.money >= 10
                 self.medium_boulder_button.draw(self.screen)
-            elif self.money >= 10:  # Can afford but not unlocked
-                self.medium_boulder_button.enabled = True
-                self.medium_boulder_button.draw(self.screen)
-            elif self.unlocked_sizes[40]:  # Show as next potential upgrade
-                self.medium_boulder_button.enabled = False
-                self.medium_boulder_button.draw(self.screen)
+            else:
+                self.medium_boulder_button.visible = False
             
-            # Large boulder (show if medium unlocked)
-            if self.unlocked_sizes[80]:
-                self.large_boulder_button.enabled = True
+            # Large boulder
+            if self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 100) or self.unlocked_sizes[50]:
+                self.large_boulder_button.visible = True
+                self.large_boulder_button.enabled = self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 100)
                 self.large_boulder_button.draw(self.screen)
-            elif self.unlocked_sizes[50] and self.money >= 100:  # Can afford but not unlocked
-                self.large_boulder_button.enabled = True
-                self.large_boulder_button.draw(self.screen)
-            elif self.unlocked_sizes[50]:  # Show as next potential upgrade
-                self.large_boulder_button.enabled = False
-                self.large_boulder_button.draw(self.screen)
+            else:
+                self.large_boulder_button.visible = False
             
-            # Huge boulder (show if large unlocked)
-            if self.unlocked_sizes[120]:
-                self.huge_boulder_button.enabled = True
+            # Huge boulder
+            if self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 500) or self.unlocked_sizes[80]:
+                self.huge_boulder_button.visible = True
+                self.huge_boulder_button.enabled = self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 500)
                 self.huge_boulder_button.draw(self.screen)
-            elif self.unlocked_sizes[80] and self.money >= 500:  # Can afford but not unlocked
-                self.huge_boulder_button.enabled = True
-                self.huge_boulder_button.draw(self.screen)
-            elif self.unlocked_sizes[80]:  # Show as next potential upgrade
-                self.huge_boulder_button.enabled = False
-                self.huge_boulder_button.draw(self.screen)
+            else:
+                self.huge_boulder_button.visible = False
 
             # Draw music button and icon
             self.music_button.draw(self.screen)
@@ -1001,6 +1091,25 @@ class Game:
                 else:
                     self.music_icon.set_alpha(128)
                 self.screen.blit(self.music_icon, (20, 65))
+            
+            # Draw next button and icon
+            self.next_button.draw(self.screen)
+            if self.next_icon:
+                if self.next_button_pressed:
+                    # Create a greyed out version of the icon
+                    grey_icon = self.next_icon.copy()
+                    grey_surface = pygame.Surface(self.next_icon.get_size(), pygame.SRCALPHA)
+                    grey_surface.fill((128, 128, 128, 128))
+                    grey_icon.blit(grey_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                    self.screen.blit(grey_icon, (60, 65))
+                else:
+                    self.screen.blit(self.next_icon, (60, 65))
+            
+            # Update next button timer
+            if self.next_button_pressed:
+                self.next_button_timer -= 1
+                if self.next_button_timer <= 0:
+                    self.next_button_pressed = False
 
             pygame.display.flip()
             self.clock.tick(60)
@@ -1011,13 +1120,6 @@ class Game:
         xp_needed = self.calculate_xp_required(current_level)
         self.strength_xp += xp_needed
         self.level_up()
-
-    def toggle_music(self):
-        self.music_enabled = not self.music_enabled
-        if self.music_enabled:
-            pygame.mixer.music.unpause()
-        else:
-            pygame.mixer.music.pause()
 
 if __name__ == "__main__":
     game = Game()
