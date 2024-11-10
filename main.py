@@ -200,6 +200,20 @@ class Game:
         # Create music toggle button (below money display)
         self.music_button = Button(20, 65, 32, 32, "", self.toggle_music)
 
+        # Load sound effects
+        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        try:
+            self.level_up_sound = pygame.mixer.Sound(os.path.join(assets_dir, 'level-up.mp3'))
+            self.money_pickup_sound = pygame.mixer.Sound(os.path.join(assets_dir, 'money-pickup.mp3'))
+            
+            # Adjust volumes (1.0 is default, 0.7 is 30% quieter)
+            self.level_up_sound.set_volume(0.7)
+            self.money_pickup_sound.set_volume(0.8)
+        except pygame.error as e:
+            print(f"Failed to load sound effects: {e}")
+            self.level_up_sound = None
+            self.money_pickup_sound = None
+
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
         return False  # Returning False tells Pymunk to ignore the collision
@@ -228,6 +242,10 @@ class Game:
         
         print(f"Level Up! Now level {current_level}")
         self.create_level_up_particles()
+        
+        # Play level up sound
+        if self.level_up_sound and self.music_enabled:
+            self.level_up_sound.play()
 
     def create_level_up_particles(self):
         # Create particles for visual effect
@@ -668,6 +686,10 @@ class Game:
                 self.hill_passes += 1
                 self.money += 1 * self.boulder_reward
                 self.spawn_money_particles(1 * self.boulder_reward)  # Spawn money particles
+                
+                # Play money pickup sound
+                if self.money_pickup_sound and self.music_enabled:
+                    self.money_pickup_sound.play()
                 
                 # Calculate XP based on boulder size with fixed values
                 if self.current_boulder:
