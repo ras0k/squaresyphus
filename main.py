@@ -942,9 +942,9 @@ class Game:
                     boulder_radius = self.current_boulder['shape'].radius
                     xp_gain = {
                         40: 1,   # Small boulder: 1 XP
-                        50: 5,   # Medium boulder: 5 XP
-                        80: 10,  # Large boulder: 10 XP
-                        120: 20  # Huge boulder: 20 XP
+                        50: 2,   # Medium boulder: 5 XP
+                        80: 5,  # Large boulder: 10 XP
+                        120: 10  # Huge boulder: 20 XP
                     }.get(boulder_radius, 1)
                     
                     old_level = self.calculate_strength_level()
