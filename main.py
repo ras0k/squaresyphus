@@ -219,8 +219,6 @@ class Game:
         handler_crushing_crushing = self.space.add_collision_handler(4, 4)
         handler_crushing_crushing.begin = self.ignore_collision
 
-        self.spawn_boulder()  # Spawn initial boulder when game starts
-
         # Create fonts - add money font
         self.font = pygame.font.Font(None, 24)  # Regular font for debug text
         self.money_font = pygame.font.Font(None, 48)  # Bigger font for money display
@@ -347,26 +345,43 @@ class Game:
         
         # Define default unlocked sizes
         default_unlocked_sizes = {
-            40: True,  # Small boulder always unlocked
-            50: False, # Medium boulder starts locked
-            80: False, # Large boulder
+            40: True,   # Small boulder always unlocked
+            50: False,  # Medium boulder starts locked
+            80: False,  # Large boulder
             120: False  # Huge boulder starts locked
         }
         
-        # Load saved data
+        # Load saved data first
         saved_data = self.load_save()
         
         # Initialize values with saved data or defaults
         self.money = saved_data.get('money', 0)
         self.strength_xp = saved_data.get('strength_xp', 0)
         
-        # Merge saved unlocked sizes with defaults to ensure all keys exist
-        saved_unlocked_sizes = saved_data.get('unlocked_sizes', {})
-        self.unlocked_sizes = default_unlocked_sizes
-        self.unlocked_sizes.update(saved_unlocked_sizes)
+        # Calculate initial strength based on loaded XP
+        current_level = self.calculate_strength_level()
+        self.strength = 36 + (current_level - 1) * 20  # Base strength + level bonus
+        self.jump_force = 3000 + (current_level - 1) * 100  # Base jump + level bonus
+        
+        # Properly merge saved unlocked sizes with defaults
+        self.unlocked_sizes = default_unlocked_sizes.copy()
+        if 'unlocked_sizes' in saved_data:
+            self.unlocked_sizes.update(saved_data['unlocked_sizes'])
+
+        # Update button text based on unlocked status
+        if self.unlocked_sizes[50]:
+            self.medium_boulder_button.text = "Medium Boulder"
+        if self.unlocked_sizes[80]:
+            self.large_boulder_button.text = "Large Boulder"
+        if self.unlocked_sizes[120]:
+            self.huge_boulder_button.text = "Huge Boulder"
 
         # Set up music end event
         pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
+
+        # Instead of spawning default boulder, spawn the last used boulder size
+        last_boulder_size = saved_data.get('last_boulder_size', 40)  # Default to small if not found
+        self.spawn_boulder(last_boulder_size)  # Spawn initial boulder with saved size
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -891,19 +906,35 @@ class Game:
     def load_save(self):
         try:
             with open(self.save_file, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+                # Convert string keys back to integers for unlocked_sizes
+                if 'unlocked_sizes' in data:
+                    data['unlocked_sizes'] = {
+                        int(size): unlocked 
+                        for size, unlocked in data['unlocked_sizes'].items()
+                    }
+                return data
         except (FileNotFoundError, json.JSONDecodeError):
-            return {}  # Return empty dict if no save file or invalid JSON
+            return {}
 
     def save_progress(self):
+        # Get current boulder size if one exists
+        current_boulder_size = None
+        if self.current_boulder:
+            current_boulder_size = int(self.current_boulder['shape'].radius)
+
         save_data = {
             'money': self.money,
             'strength_xp': self.strength_xp,
-            'unlocked_sizes': self.unlocked_sizes
+            'unlocked_sizes': {
+                str(size): unlocked
+                for size, unlocked in self.unlocked_sizes.items()
+            },
+            'last_boulder_size': current_boulder_size  # Save current boulder size
         }
         try:
             with open(self.save_file, 'w') as f:
-                json.dump(save_data, f)
+                json.dump(save_data, f, indent=2)
         except Exception as e:
             print(f"Failed to save progress: {e}")
 
