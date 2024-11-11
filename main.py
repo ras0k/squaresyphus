@@ -438,8 +438,8 @@ class Game:
             self.unlock_new_hill()
 
     def unlock_new_hill(self):
-        # Double the map size
-        self.width *= 2
+        # Set the map width to accommodate the second hill plus 600px after
+        self.width = 2800  # 2200 (hill2 right base) + 600 (extra space)
 
         # Create a new, taller hill to the right of the existing one
         self.taller_hill = self.create_taller_hill()
@@ -469,7 +469,7 @@ class Game:
         
         # Left wall
         left_wall_shape = pymunk.Segment(wall_body, (0, 0), (0, self.height), wall_thickness)
-        # Right wall
+        # Right wall - ensure it's at exactly self.width
         right_wall_shape = pymunk.Segment(wall_body, (self.width, 0), (self.width, self.height), wall_thickness)
         # Top wall
         top_wall_shape = pymunk.Segment(wall_body, (0, 0), (self.width, 0), wall_thickness)
@@ -559,19 +559,33 @@ class Game:
     def draw_particles(self):
         # Draw particles on the screen
         for particle in self.particles:
-            pygame.draw.circle(self.screen, (255, 215, 0), (int(particle[0][0] - self.camera_x), int(particle[0][1])), int(particle[2]))
-        # Draw money texts
+            pygame.draw.circle(self.screen, (255, 215, 0), 
+                (int(particle[0][0] - self.camera_x), int(particle[0][1])), 
+                int(particle[2]))
+        
+        # Draw money texts with camera offset
         for text in self.money_texts:
             font = pygame.font.Font(None, text['size'])
             text_surface = font.render(text['text'], True, (0, 100, 0))  # Darker green color
             text_surface.set_alpha(int(255 * text['life']))  # Fade out
-            self.screen.blit(text_surface, (int(text['pos'][0] - self.camera_x), int(text['pos'][1])))
+            # Apply camera offset to x position
+            screen_x = text['pos'][0] - self.camera_x
+            self.screen.blit(text_surface, (int(screen_x), int(text['pos'][1])))
 
-    def spawn_money_particles(self, amount):
+    def spawn_money_particles(self, amount, hill2=False):
         # Create money text effect 40 pixels higher
+        if hill2:
+            # Position for Hill 2 (centered above the hill)
+            x_pos = 1980  # Center of Hill 2
+            y_pos = self.height - 420
+        else:
+            # Position for Hill 1 (centered above the hill)
+            x_pos = 870   # Center of Hill 1
+            y_pos = self.height - 340
+
         self.money_texts.append({
             'text': f"+${amount}", 
-            'pos': [830, self.height - 340],  # Changed from width * 4.15 // 8 to explicit 1000px
+            'pos': [x_pos, y_pos],  # Adjusted height to be above hills
             'life': 1.0, 
             'size': 48
         })
@@ -1087,16 +1101,28 @@ class Game:
                 if self.boulder_at_bottom or boulder.position.x < left_sensor_x or boulder.position.x > right_sensor_x:
                     self.boulder_at_bottom = True
                 
-                # Check top sensor
+                # Check top sensor for Hill 1
                 if (hill_top_x - 50 < boulder.position.x < hill_top_x + 50 and 
                     hill_top_y - 50 < boulder.position.y < hill_top_y + 50):
                     boulder_detected = True
+                    reward_multiplier = 1  # Hill 1 reward multiplier
+
+                # Check top sensor for Hill 2
+                hill2_top_x = 1900  # Center point between 1800 and 2000
+                hill2_top_y = self.height - 300 - self.offset  # Matches the hill peak height
+                if (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100 and  # Wider detection area
+                    hill2_top_y - 50 < boulder.position.y < hill2_top_y + 50):
+                    boulder_detected = True
+                    reward_multiplier = 2  # Hill 2 reward multiplier
 
             # Increment counter when boulder enters detection area
             if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
                 self.hill_passes += 1
-                self.money += 1 * self.boulder_reward
-                self.spawn_money_particles(1 * self.boulder_reward)  # Spawn money particles
+                self.money += reward_multiplier * self.boulder_reward
+                
+                # Spawn money particles above the correct hill
+                is_hill2 = (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100)
+                self.spawn_money_particles(reward_multiplier * self.boulder_reward, hill2=is_hill2)
                 
                 # Play money pickup sound
                 if self.money_pickup_sound:
