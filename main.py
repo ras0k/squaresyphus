@@ -4,6 +4,7 @@ import pymunk.pygame_util
 import os
 import math
 import random
+import json
 
 # Initialize pygame mixer for audio
 pygame.mixer.init()
@@ -340,6 +341,29 @@ class Game:
         self.next_button_pressed = False
         self.next_button_timer = 0
         self.next_button_press_duration = 5  # 60 frames = 1 second at 60fps
+
+        # Add save file path
+        self.save_file = os.path.join(os.path.dirname(__file__), 'save_data.json')
+        
+        # Define default unlocked sizes
+        default_unlocked_sizes = {
+            40: True,  # Small boulder always unlocked
+            50: False, # Medium boulder starts locked
+            80: False, # Large boulder
+            120: False  # Huge boulder starts locked
+        }
+        
+        # Load saved data
+        saved_data = self.load_save()
+        
+        # Initialize values with saved data or defaults
+        self.money = saved_data.get('money', 0)
+        self.strength_xp = saved_data.get('strength_xp', 0)
+        
+        # Merge saved unlocked sizes with defaults to ensure all keys exist
+        saved_unlocked_sizes = saved_data.get('unlocked_sizes', {})
+        self.unlocked_sizes = default_unlocked_sizes
+        self.unlocked_sizes.update(saved_unlocked_sizes)
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -857,6 +881,25 @@ class Game:
         except pygame.error as e:
             pass
 
+    def load_save(self):
+        try:
+            with open(self.save_file, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}  # Return empty dict if no save file or invalid JSON
+
+    def save_progress(self):
+        save_data = {
+            'money': self.money,
+            'strength_xp': self.strength_xp,
+            'unlocked_sizes': self.unlocked_sizes
+        }
+        try:
+            with open(self.save_file, 'w') as f:
+                json.dump(save_data, f)
+        except Exception as e:
+            print(f"Failed to save progress: {e}")
+
     def run(self):
         # Show splash screen first
         if not self.show_splash_screen():
@@ -1106,6 +1149,8 @@ class Game:
 
             pygame.display.flip()
             self.clock.tick(60)
+
+        self.save_progress()  # Save one final time before exiting
 
     def debug_level_up(self):
         # Add enough XP to reach next level
