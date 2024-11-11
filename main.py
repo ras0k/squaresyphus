@@ -147,18 +147,10 @@ class Game:
             orange_surface.fill((255, 165, 0, 100))  # Semi-transparent orange
             self.boulder_sprite_orange.blit(orange_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
-        # Move buttons to right side below money display - make them wider
-        button_x = 620
-        button_width = 180  # Increased from 150
-        self.small_boulder_button = Button(button_x, 60, button_width, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
-        self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
-        self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (50$)", lambda: self.unlock_and_spawn(80))
-        self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (200$)", lambda: self.unlock_and_spawn(120))
-        
         # Set default values that were previously in sliders
         self.jump_force = 3000
         self.strength = 36
-        self.strength_xp = 4  # Start with 4 XP
+        self.strength_xp = 0  # Start with 0 XP
         self.strength_level = 1
         self.friction = 0.6
 
@@ -206,7 +198,7 @@ class Game:
         
         # Add counter for hill passes and money
         self.hill_passes = 0
-        self.money = 999  # Start with 999 money
+        self.money = 0  # Start with 0 money
         self.last_boulder_detected = False  # Track previous detection state
         self.boulder_at_bottom = False  # Track if boulder has reached bottom
 
@@ -237,8 +229,8 @@ class Game:
         button_x = 800 - button_width - 10  # Right side with 10px padding
         self.small_boulder_button = Button(button_x, 60, button_width, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
         self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
-        self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (100$)", lambda: self.unlock_and_spawn(80))
-        self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (1000$)", lambda: self.unlock_and_spawn(120))
+        self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (50$)", lambda: self.unlock_and_spawn(80))
+        self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (200$)", lambda: self.unlock_and_spawn(120))
         
         # Add music state tracking
         self.music_enabled = True
@@ -942,9 +934,9 @@ class Game:
                     boulder_radius = self.current_boulder['shape'].radius
                     xp_gain = {
                         40: 1,   # Small boulder: 1 XP
-                        50: 2,   # Medium boulder: 5 XP
-                        80: 5,  # Large boulder: 10 XP
-                        120: 10  # Huge boulder: 20 XP
+                        50: 2,   # Medium boulder: 2 XP
+                        80: 5,  # Large boulder: 5 XP
+                        120: 10  # Huge boulder: 10 XP
                     }.get(boulder_radius, 1)
                     
                     old_level = self.calculate_strength_level()
@@ -1069,7 +1061,7 @@ class Game:
                 self.medium_boulder_button.visible = False
             
             # Large boulder
-            if self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 100) or self.unlocked_sizes[50]:
+            if self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 50) or self.unlocked_sizes[50]:
                 self.large_boulder_button.visible = True
                 self.large_boulder_button.enabled = self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 100)
                 self.large_boulder_button.draw(self.screen)
@@ -1077,7 +1069,7 @@ class Game:
                 self.large_boulder_button.visible = False
             
             # Huge boulder
-            if self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 500) or self.unlocked_sizes[80]:
+            if self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 200) or self.unlocked_sizes[80]:
                 self.huge_boulder_button.visible = True
                 self.huge_boulder_button.enabled = self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 500)
                 self.huge_boulder_button.draw(self.screen)
