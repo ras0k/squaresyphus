@@ -379,9 +379,19 @@ class Game:
         # Set up music end event
         pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
 
+        # Define reward mapping
+        self.boulder_rewards = {
+            40: (1, 1),    # (money, xp) for small boulder
+            50: (2, 2),    # medium boulder
+            80: (5, 5),    # large boulder
+            120: (10, 10)  # huge boulder
+        }
+
         # Instead of spawning default boulder, spawn the last used boulder size
         last_boulder_size = saved_data.get('last_boulder_size', 40)  # Default to small if not found
-        self.spawn_boulder(last_boulder_size)  # Spawn initial boulder with saved size
+        # Get the correct rewards for the loaded boulder size
+        self.boulder_reward, self.boulder_xp_gain = self.boulder_rewards[last_boulder_size]
+        self.spawn_boulder(last_boulder_size, self.boulder_reward, self.boulder_xp_gain)
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -570,7 +580,7 @@ class Game:
             reward, xp_gain = rewards.get(size, (1, 1))  # Default to (1$, 1 XP) if not found
             self.spawn_boulder(size, reward, xp_gain)
 
-    def spawn_boulder(self, size=40, reward=1, xp_gain=1):
+    def spawn_boulder(self, size=40, reward=None, xp_gain=None):
         # Check cooldown
         if self.spawn_cooldown > 0:
             return
@@ -580,16 +590,18 @@ class Game:
             return
             
         if self.current_boulder is not None:
-            # Immediately remove old boulder instead of waiting for crush animation
             self.space.remove(self.current_boulder['body'], self.current_boulder['shape'])
             self.current_boulder = None
 
-        # Immediately create new boulder
+        # Get rewards from mapping if not specified
+        if reward is None or xp_gain is None:
+            reward, xp_gain = self.boulder_rewards[size]  # Changed from .get() to direct access
+
         boulder_body, boulder_shape = self.create_boulder(size)
         new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
         self.current_boulder = new_boulder
         self.boulder_reward = reward
-        self.boulder_xp_gain = xp_gain  # Store XP gain for this boulder
+        self.boulder_xp_gain = xp_gain
         
         # Set spawn cooldown
         self.spawn_cooldown = 10
@@ -1141,18 +1153,18 @@ class Game:
             else:
                 self.medium_boulder_button.visible = False
             
-            # Large boulder
-            if self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 50) or self.unlocked_sizes[50]:
+            # Large boulder - Fix the conditions here
+            if self.unlocked_sizes[80] or self.unlocked_sizes[50]:  # Show if unlocked or previous size is unlocked
                 self.large_boulder_button.visible = True
-                self.large_boulder_button.enabled = self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 100)
+                self.large_boulder_button.enabled = self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 50)  # Fixed cost check
                 self.large_boulder_button.draw(self.screen)
             else:
                 self.large_boulder_button.visible = False
             
             # Huge boulder
-            if self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 200) or self.unlocked_sizes[80]:
+            if self.unlocked_sizes[120] or self.unlocked_sizes[80]:
                 self.huge_boulder_button.visible = True
-                self.huge_boulder_button.enabled = self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 500)
+                self.huge_boulder_button.enabled = self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 200)
                 self.huge_boulder_button.draw(self.screen)
             else:
                 self.huge_boulder_button.visible = False
