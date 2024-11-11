@@ -365,6 +365,9 @@ class Game:
         self.unlocked_sizes = default_unlocked_sizes
         self.unlocked_sizes.update(saved_unlocked_sizes)
 
+        # Set up music end event
+        pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
+
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
         return False  # Returning False tells Pymunk to ignore the collision
@@ -662,34 +665,40 @@ class Game:
 
     def create_clouds(self):
         clouds = []
-        for _ in range(15):  # Increase number of clouds to 15
+        for _ in range(15):
             x = random.randint(0, self.width)
             y = random.randint(0, 200)  # Clouds in the upper part of the screen
-            width = 96  # Cloud width (tripled)
-            height = 96  # Cloud height (tripled)
-            speed = random.uniform(0.1, 0.4)  # Random speed, slower for more parallax
-            opacity = int(255 * (1 - speed))  # More opaque if faster
-            cloud_type = random.choice([0, 1, 2, 3])  # Randomly choose between cloud types
-            clouds.append([x, y, width, height, speed, opacity, cloud_type])
+            width = 96  # Base cloud width
+            height = 96  # Base cloud height
+            scale = random.uniform(0.8, 1.2)  # Random scale between 0.8 and 1.2
+            speed = random.uniform(0.1, 0.4)
+            opacity = int(255 * (1 - speed))
+            cloud_type = random.choice([0, 1, 2, 3])
+            clouds.append([x, y, width, height, speed, opacity, cloud_type, scale])  # Added scale
         return clouds
 
     def draw_clouds(self):
         for cloud in self.clouds:
-            x, y, width, height, speed, opacity, cloud_type = cloud
-            cloud_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+            x, y, width, height, speed, opacity, cloud_type, scale = cloud  # Unpack scale
+            
+            # Calculate scaled dimensions
+            scaled_width = int(width * scale)
+            scaled_height = int(height * scale)
+            
+            cloud_surface = pygame.Surface((scaled_width, scaled_height), pygame.SRCALPHA)
             
             # Create subsurface for the cloud type
             cloud_sprite = self.cloud_sprite_sheet.subsurface((cloud_type * 32, 0, 32, 32))
-            # Scale the sprite
-            scaled_sprite = pygame.transform.scale(cloud_sprite, (width, height))
+            # Scale the sprite using the random scale
+            scaled_sprite = pygame.transform.scale(cloud_sprite, (scaled_width, scaled_height))
             # Blit the scaled sprite
             cloud_surface.blit(scaled_sprite, (0, 0))
             
-            cloud_surface.set_alpha(opacity)  # Set opacity
+            cloud_surface.set_alpha(opacity)
             self.screen.blit(cloud_surface, (x, y))
             cloud[0] += speed  # Move cloud right
             if cloud[0] > self.width:  # Reset cloud position if it goes off screen
-                cloud[0] = -width
+                cloud[0] = -scaled_width  # Use scaled width for reset position
 
     def draw_grass(self):
         # Calculate how many times we need to tile the grass horizontally
@@ -704,14 +713,12 @@ class Game:
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                self.save_progress()  # Save before quitting
                 return False
             
             # Handle music end event
             if event.type == pygame.USEREVENT + 1:  # Music ended
-                self.current_track = (self.current_track + 1) % len(self.music_tracks)
-                pygame.mixer.music.load(self.music_tracks[self.current_track])
-                if self.music_enabled:
-                    pygame.mixer.music.play()
+                self.next_track()
                 
             # Handle UI buttons
             self.music_button.handle_event(event)
@@ -879,7 +886,7 @@ class Game:
                 self.is_fading = False
             
         except pygame.error as e:
-            pass
+            print(f"Failed to load next track: {e}")
 
     def load_save(self):
         try:
