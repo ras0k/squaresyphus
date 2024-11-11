@@ -656,13 +656,13 @@ class Game:
         self.space.add(sisyphus_body, sisyphus_shape)
         return sisyphus_body
 
-    def create_boulder(self, radius=40):
+    def create_boulder(self, radius=40, position=(480, 0)):
         boulder_mass = radius * 0.5
         boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, radius)
         boulder_body = pymunk.Body(boulder_mass, boulder_moment)
         
-        # Spawn left of the hill with explicit position
-        boulder_body.position = 480, self.height - 250 - self.offset  # Changed from width * .3
+        # Use the provided position for spawning
+        boulder_body.position = position
         boulder_shape = pymunk.Circle(boulder_body, radius)
         boulder_shape.friction = self.friction
         boulder_shape.color = pygame.Color('gray')  # Set default color
@@ -706,7 +706,15 @@ class Game:
         if reward is None or xp_gain is None:
             reward, xp_gain = self.boulder_rewards[size]  # Changed from .get() to direct access
 
-        boulder_body, boulder_shape = self.create_boulder(size)
+        # Determine spawn position based on Sisyphus's position
+        if self.sisyphus.position.x < 1250:
+            # Spawn in front of the first hill
+            boulder_position = (480, self.height - 250 - self.offset)
+        else:
+            # Spawn in front of the second hill
+            boulder_position = (1500, self.height - 250 - self.offset)
+
+        boulder_body, boulder_shape = self.create_boulder(size, boulder_position)
         new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
         self.current_boulder = new_boulder
         self.boulder_reward = reward
