@@ -368,6 +368,13 @@ class Game:
         if 'unlocked_sizes' in saved_data:
             self.unlocked_sizes.update(saved_data['unlocked_sizes'])
 
+        # Check if the player is over level 5 and unlock the second hill if necessary
+        if current_level >= 5:
+            self.unlock_new_hill()
+            if not saved_data.get('hill_unlocked', False):
+                self.create_level_up_particles()
+                self.display_new_hill_message()
+
         # Update button text based on unlocked status
         if self.unlocked_sizes[50]:
             self.medium_boulder_button.text = "Medium Boulder"
@@ -425,6 +432,108 @@ class Game:
         # Play level up sound
         if self.level_up_sound:
             self.level_up_sound.play()
+
+        # Check if level 5 is reached
+        if current_level == 5:
+            self.unlock_new_hill()
+
+    def unlock_new_hill(self):
+        # Double the map size
+        self.width *= 2
+
+        # Create a new, taller hill to the right of the existing one
+        self.taller_hill = self.create_taller_hill()
+
+        # Adjust the walls and ground to match the new map size
+        self.update_walls()
+        self.update_ground()
+
+        # Mark the hill as unlocked in the save data
+        self.hill_unlocked = True
+
+    def update_walls(self):
+        # Remove existing walls
+        for wall in self.walls:
+            self.space.remove(wall)
+        
+        # Create new walls with updated map size
+        self.walls = self.create_walls()
+
+    def create_walls(self):
+        walls = []
+        wall_body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        wall_thickness = 5
+        
+        # Add the wall body to the space first
+        self.space.add(wall_body)
+        
+        # Left wall
+        left_wall_shape = pymunk.Segment(wall_body, (0, 0), (0, self.height), wall_thickness)
+        # Right wall
+        right_wall_shape = pymunk.Segment(wall_body, (self.width, 0), (self.width, self.height), wall_thickness)
+        # Top wall
+        top_wall_shape = pymunk.Segment(wall_body, (0, 0), (self.width, 0), wall_thickness)
+        
+        for wall in [left_wall_shape, right_wall_shape, top_wall_shape]:
+            wall.friction = self.friction
+            wall.collision_type = 2  # Set collision type for walls
+            self.space.add(wall)
+            walls.append(wall)
+        
+        return walls
+
+    def update_ground(self):
+        # Remove existing ground
+        self.space.remove(self.ground)
+
+        # Create new ground with updated map size
+        self.ground = self.create_ground_poly()
+
+    def create_ground_poly(self):
+        # Create a ground as a static polygon with thickness
+        ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        ground_shape = pymunk.Poly(ground_body, [
+            (0, self.height - self.offset),  # Raise by offset
+            (self.width, self.height - self.offset),  # Extend to new width
+            (self.width, self.height - self.offset - 10),  # Extend to new width
+            (0, self.height - self.offset - 10)  # Raise by offset
+        ])
+        ground_shape.friction = self.friction
+        ground_shape.collision_type = 2  # Set collision type for ground
+        ground_shape.color = pygame.Color(139, 69, 19)  # Change ground color to match mountain fill color
+        self.space.add(ground_body, ground_shape)
+        return ground_body
+
+    def create_taller_hill(self):
+        hill_body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        
+        # Define a taller hill shape with explicit pixel values
+        hill_points = [
+            (1600, self.height - self.offset),          # Left base
+            (1940, self.height - 240 - self.offset),    # Left peak, taller by 100 pixels
+            (2040, self.height - 240 - self.offset),    # Right peak, taller by 100 pixels
+            (2380, self.height - self.offset)           # Right base
+        ]
+        
+        hill_shapes = []
+        for i in range(len(hill_points) - 1):
+            segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
+            segment.friction = self.friction
+            segment.collision_type = 2  # Set collision type for hill
+            segment.color = pygame.Color(139, 69, 19)  # Change hill color to match mountain fill color
+            hill_shapes.append(segment)
+        
+        self.space.add(hill_body, *hill_shapes)
+        return hill_body
+
+    def display_new_hill_message(self):
+        # Display a message indicating the new hill is unlocked
+        message = "New Hill Unlocked!"
+        message_surface = self.font.render(message, True, (255, 0, 0))  # Red color for visibility
+        message_rect = message_surface.get_rect(center=(self.width // 4, 50))  # Centered at the top of the first half
+        self.screen.blit(message_surface, message_rect)
+        pygame.display.flip()
+        pygame.time.delay(2000)  # Display for 2 seconds
 
     def create_level_up_particles(self):
         # Create particles for visual effect
@@ -613,44 +722,6 @@ class Game:
         for boulder in self.crushing_boulders:
             self.space.remove(boulder['body'], boulder['shape'])
         self.crushing_boulders.clear()
-
-    def create_ground_poly(self):
-        # **Create a ground as a static polygon with thickness**
-        ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        ground_shape = pymunk.Poly(ground_body, [
-            (0, self.height - self.offset),  # Raise by offset
-            (self.width, self.height - self.offset),  # Raise by offset
-            (self.width, self.height - self.offset - 10),  # Raise by offset
-            (0, self.height - self.offset - 10)  # Raise by offset
-        ])
-        ground_shape.friction = self.friction
-        ground_shape.collision_type = 2  # Set collision type for ground
-        ground_shape.color = pygame.Color(139, 69, 19)  # Change ground color to match mountain fill color
-        self.space.add(ground_body, ground_shape)
-        return ground_body
-
-    def create_walls(self):
-        walls = []
-        wall_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        wall_thickness = 5
-        
-        # Add the wall body to the space first
-        self.space.add(wall_body)
-        
-        # Left wall
-        left_wall_shape = pymunk.Segment(wall_body, (0, 0), (0, self.height), wall_thickness)
-        # Right wall
-        right_wall_shape = pymunk.Segment(wall_body, (self.width, 0), (self.width, self.height), wall_thickness)
-        # Top wall
-        top_wall_shape = pymunk.Segment(wall_body, (0, 0), (self.width, 0), wall_thickness)
-        
-        for wall in [left_wall_shape, right_wall_shape, top_wall_shape]:
-            wall.friction = self.friction
-            wall.collision_type = 2  # Set collision type for walls
-            self.space.add(wall)
-            walls.append(wall)
-        
-        return walls
 
     def create_hill(self):
         hill_body = pymunk.Body(body_type=pymunk.Body.STATIC)
@@ -942,7 +1013,8 @@ class Game:
                 str(size): unlocked
                 for size, unlocked in self.unlocked_sizes.items()
             },
-            'last_boulder_size': current_boulder_size  # Save current boulder size
+            'last_boulder_size': current_boulder_size,  # Save current boulder size
+            'hill_unlocked': self.hill_unlocked  # Save hill unlocked state
         }
         try:
             with open(self.save_file, 'w') as f:
