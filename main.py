@@ -76,7 +76,7 @@ class InputBox:
 class Game:
     def __init__(self):
         pygame.init()
-        self.width, self.height = 1600, 600  # Extended width for a larger game area
+        self.width, self.height = 1740, 600  # Updated width to 1740px
         
         self.screen = pygame.display.set_mode(
             (800, 600),
@@ -462,7 +462,7 @@ class Game:
         # Create money text effect 40 pixels higher
         self.money_texts.append({
             'text': f"+${amount}", 
-            'pos': [self.width * 4.15 // 8, self.height - 340],  # Changed from -300 to -340
+            'pos': [830, self.height - 340],  # Changed from width * 4.15 // 8 to explicit 1000px
             'life': 1.0, 
             'size': 48
         })
@@ -552,8 +552,8 @@ class Game:
         boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, radius)
         boulder_body = pymunk.Body(boulder_mass, boulder_moment)
         
-        # Spawn left of the hill
-        boulder_body.position = self.width * .3 , self.height - 250 - self.offset  # Raise by offset
+        # Spawn left of the hill with explicit position
+        boulder_body.position = 480, self.height - 250 - self.offset  # Changed from width * .3
         boulder_shape = pymunk.Circle(boulder_body, radius)
         boulder_shape.friction = self.friction
         boulder_shape.color = pygame.Color('gray')  # Set default color
@@ -642,7 +642,7 @@ class Game:
         # Right wall
         right_wall_shape = pymunk.Segment(wall_body, (self.width, 0), (self.width, self.height), wall_thickness)
         # Top wall
-        top_wall_shape = pymunk.Segment(wall_body, (0, 0), (0, self.height), wall_thickness)
+        top_wall_shape = pymunk.Segment(wall_body, (0, 0), (self.width, 0), wall_thickness)
         
         for wall in [left_wall_shape, right_wall_shape, top_wall_shape]:
             wall.friction = self.friction
@@ -657,10 +657,10 @@ class Game:
         
         # Create a more complex hill shape
         hill_points = [
-            (self.width * 3 // 8, self.height - self.offset),  # Raise by offset
-            (self.width * 4.2 // 8, self.height - 140 - self.offset),  # Raise by offset
-            (self.width * 4.5 // 8, self.height - 140 - self.offset),  # Raise by offset
-            (self.width * 5.7 // 8, self.height - self.offset)  # Raise by offset
+            (600, self.height - self.offset),          # Left base
+            (840, self.height - 140 - self.offset),    # Left peak
+            (900, self.height - 140 - self.offset),   # Right peak
+            (1140, self.height - self.offset)          # Right base
         ]
         
         hill_shapes = []
@@ -680,12 +680,12 @@ class Game:
             texture_pos = (400 + self.hill_x_offset - self.camera_x, 300 + self.hill_y_offset)
             self.screen.blit(self.hill_texture, texture_pos)
 
-        # Draw the original hill shape underneath
+        # Draw the original hill shape underneath with explicit pixel values
         hill_points = [
-            (self.width * 3 // 8, self.height - self.offset),
-            (self.width * 4.2 // 8, self.height - 140 - self.offset),
-            (self.width * 4.5 // 8, self.height - 140 - self.offset),
-            (self.width * 5.7 // 8, self.height - self.offset)
+            (600, self.height - self.offset),          # Left base
+            (840, self.height - 140 - self.offset),    # Left peak
+            (900, self.height - 140 - self.offset),   # Right peak
+            (1140, self.height - self.offset)          # Right base
         ]
         pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill_points])
         pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill_points], 5)
@@ -991,14 +991,14 @@ class Game:
                     self.crushing_boulders.remove(boulder)
 
             # Check if any boulder is in the detection area at the top
-            hill_top_x = self.width * 4.35 // 8
-            hill_top_y = self.height - 190 - self.offset  # Raise by offset
+            hill_top_x = 870  # Changed from width * 4.35 // 8
+            hill_top_y = self.height - 190 - self.offset
             boulder_detected = False
             
-            # Define bottom sensor areas
-            left_sensor_x = self.width * 3 // 8
-            right_sensor_x = self.width * 5.7 // 8
-            sensor_y = self.height - 40 - self.offset  # Raise by offset
+            # Define bottom sensor areas with explicit values
+            left_sensor_x = 600   # Changed from width * 3 // 8
+            right_sensor_x = 1140 # Changed from width * 5.7 // 8
+            sensor_y = self.height - 40 - self.offset
             sensor_size = 50
 
             if self.current_boulder and self.current_boulder['state'] == 'normal':
@@ -1075,10 +1075,10 @@ class Game:
             
             # Draw the collision hill
             hill_points = [
-                (self.width * 3 // 8, self.height - self.offset),
-                (self.width * 4.2 // 8, self.height - 140 - self.offset),
-                (self.width * 4.5 // 8, self.height - 140 - self.offset),
-                (self.width * 5.7 // 8, self.height - self.offset)
+                (600, self.height - self.offset),          # Left base
+                (840, self.height - 140 - self.offset),    # Left peak
+                (900, self.height - 140 - self.offset),   # Right peak
+                (1140, self.height - self.offset)          # Right base
             ]
             pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill_points])
             pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill_points], 5)
