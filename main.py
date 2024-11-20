@@ -76,7 +76,7 @@ class InputBox:
 class Game:
     def __init__(self):
         pygame.init()
-        self.width, self.height = 1740, 600  # Updated width to 1740px
+        self.width, self.height = 2340, 600  # Updated width to 1740px
         
         self.screen = pygame.display.set_mode(
             (800, 600),
@@ -446,7 +446,7 @@ class Game:
 
     def unlock_new_hill(self):
         # Set the map width to accommodate the second hill plus 600px after
-        self.width = 2800  # 2200 (hill2 right base) + 600 (extra space)
+        self.width = 3400  # 2200 (hill2 right base) + 600 (extra space)
 
         # Create a new, taller hill to the right of the existing one
         self.taller_hill = self.create_taller_hill()
@@ -1113,8 +1113,7 @@ class Game:
                 # Check top sensor for Hill 2
                 hill2_top_x = 1930
                 hill2_top_y = self.height - 300 - self.offset  # Matches the hill peak height
-                if (hill2_top_x < boulder.position.x < hill2_top_x + 100 and  # Reduced x-range to 50
-                    boulder.position.y >= hill2_top_y):  # Ensure y is not lower than hill2_top_y
+                if (hill2_top_x < boulder.position.x < hill2_top_x + 100):
                     boulder_detected = True
                     reward_multiplier = 2  # Hill 2 reward multiplier
 
