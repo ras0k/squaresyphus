@@ -76,7 +76,7 @@ class InputBox:
 class Game:
     def __init__(self):
         pygame.init()
-        self.width = 1720  # Initial width before Hill 2 is unlocked
+        self.width = 1725  # Initial width before Hill 2 is unlocked
         self.height = 600  # Updated width to 1740px
         
         self.screen = pygame.display.set_mode(

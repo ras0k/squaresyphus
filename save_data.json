@@ -1,10 +1,10 @@
 {
-  "money": 2,
-  "strength_xp": 2,
+  "money": 223,
+  "strength_xp": 180,
   "unlocked_sizes": {
     "40": true,
-    "50": false,
-    "80": false,
+    "50": true,
+    "80": true,
     "120": false,
     "150": false
   },
