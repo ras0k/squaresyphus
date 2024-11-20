@@ -1111,10 +1111,10 @@ class Game:
                     reward_multiplier = 1  # Hill 1 reward multiplier
 
                 # Check top sensor for Hill 2
-                hill2_top_x = 1900  # Center point between 1800 and 2000
+                hill2_top_x = 1930
                 hill2_top_y = self.height - 300 - self.offset  # Matches the hill peak height
-                if (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100 and  # Wider detection area
-                    hill2_top_y - 50 < boulder.position.y < hill2_top_y + 50):
+                if (hill2_top_x < boulder.position.x < hill2_top_x + 100 and  # Reduced x-range to 50
+                    boulder.position.y >= hill2_top_y):  # Ensure y is not lower than hill2_top_y
                     boulder_detected = True
                     reward_multiplier = 2  # Hill 2 reward multiplier
 
