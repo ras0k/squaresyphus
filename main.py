@@ -76,7 +76,8 @@ class InputBox:
 class Game:
     def __init__(self):
         pygame.init()
-        self.width, self.height = 2340, 600  # Updated width to 1740px
+        self.width = 1720  # Initial width before Hill 2 is unlocked
+        self.height = 600  # Updated width to 1740px
         
         self.screen = pygame.display.set_mode(
             (800, 600),
@@ -422,6 +423,7 @@ class Game:
             self.golden_boulder_sprite = None
 
         self.golden_boulder_unlocked = False  # Track if the golden boulder is unlocked
+        self.hill_unlocked = False  # Initialize hill_unlocked to False
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -462,10 +464,7 @@ class Game:
 
     def unlock_new_hill(self):
         # Set the map width to accommodate the second hill plus 600px after
-        self.width = 3400  # 2200 (hill2 right base) + 600 (extra space)
-
-        # Create a new, taller hill to the right of the existing one
-        self.taller_hill = self.create_taller_hill()
+        self.width = 3400  # New width after Hill 2 is unlocked
 
         # Adjust the walls and ground to match the new map size
         self.update_walls()
@@ -1190,14 +1189,18 @@ class Game:
                     self.space.remove(boulder['body'], boulder['shape'])
                     self.crushing_boulders.remove(boulder)
 
+            # Initialize hill2_top_x and hill2_top_y with default values
+            hill2_top_x = 0
+            hill2_top_y = 0
+
             # Check if any boulder is in the detection area at the top
-            hill_top_x = 870  # Changed from width * 4.35 // 8
+            hill_top_x = 870
             hill_top_y = self.height - 190 - self.offset
             boulder_detected = False
-            
+
             # Define bottom sensor areas with explicit values
-            left_sensor_x = 600   # Changed from width * 3 // 8
-            right_sensor_x = 1140 # Changed from width * 5.7 // 8
+            left_sensor_x = 600
+            right_sensor_x = 1140
             sensor_y = self.height - 40 - self.offset
             sensor_size = 50
 
@@ -1206,19 +1209,20 @@ class Game:
                 # Check if boulder is at bottom sensors
                 if self.boulder_at_bottom or boulder.position.x < left_sensor_x or boulder.position.x > right_sensor_x:
                     self.boulder_at_bottom = True
-                
+
                 # Check top sensor for Hill 1
                 if (hill_top_x - 50 < boulder.position.x < hill_top_x + 50 and 
                     hill_top_y - 50 < boulder.position.y < hill_top_y + 50):
                     boulder_detected = True
                     reward_multiplier = 1  # Hill 1 reward multiplier
 
-                # Check top sensor for Hill 2
-                hill2_top_x = 1930
-                hill2_top_y = self.height - 300 - self.offset  # Matches the hill peak height
-                if (hill2_top_x < boulder.position.x < hill2_top_x + 100):
-                    boulder_detected = True
-                    reward_multiplier = 2  # Hill 2 reward multiplier
+                # Check top sensor for Hill 2 only if unlocked
+                if self.hill_unlocked:
+                    hill2_top_x = 1930
+                    hill2_top_y = self.height - 300 - self.offset
+                    if (hill2_top_x < boulder.position.x < hill2_top_x + 100):
+                        boulder_detected = True
+                        reward_multiplier = 2  # Hill 2 reward multiplier
 
             # Increment counter when boulder enters detection area
             if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
@@ -1226,7 +1230,7 @@ class Game:
                 self.money += reward_multiplier * self.boulder_reward
                 
                 # Spawn money particles above the correct hill
-                is_hill2 = (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100)
+                is_hill2 = (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100) if self.hill_unlocked else False
                 self.spawn_money_particles(reward_multiplier * self.boulder_reward, hill2=is_hill2)
                 
                 # Play money pickup sound
@@ -1306,8 +1310,8 @@ class Game:
                 texture_pos = (400 + self.hill_x_offset - self.camera_x, 300 + self.hill_y_offset)
                 self.screen.blit(self.hill_texture, texture_pos)
             
-                    # Draw hill_2 texture
-            if self.hill_2_texture:
+                    # Draw hill_2 texture only if unlocked
+            if self.hill_unlocked and self.hill_2_texture:
                 hill_2_texture_pos = (1600 - self.camera_x, 202 + self.hill_y_offset)
                 self.screen.blit(self.hill_2_texture, hill_2_texture_pos)
 
