@@ -157,10 +157,11 @@ class Game:
 
         # Track unlocked boulder sizes
         self.unlocked_sizes = {
-            40: True,  # Small boulder always unlocked
-            50: False, # Medium boulder starts locked
-            80: False, # Large boulder size increased to 80
-            120: False  # Huge boulder starts locked
+            40: True,   # Small boulder always unlocked
+            50: False,  # Medium boulder starts locked
+            80: False,  # Large boulder size increased to 80
+            120: False, # Huge boulder starts locked
+            150: False  # Golden boulder starts locked
         }
 
         self.particles = []  # List to store particles
@@ -230,6 +231,7 @@ class Game:
         self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
         self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (50$)", lambda: self.unlock_and_spawn(80))
         self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (200$)", lambda: self.unlock_and_spawn(120))
+        self.golden_boulder_button = Button(button_x, 220, button_width, 30, self.get_golden_boulder_text(), self.unlock_and_spawn_golden_boulder)
         
         # Add music state tracking
         self.music_enabled = True
@@ -348,7 +350,8 @@ class Game:
             40: True,   # Small boulder always unlocked
             50: False,  # Medium boulder starts locked
             80: False,  # Large boulder
-            120: False  # Huge boulder starts locked
+            120: False, # Huge boulder starts locked
+            150: False  # Golden boulder starts locked
         }
         
         # Load saved data first
@@ -382,6 +385,9 @@ class Game:
             self.large_boulder_button.text = "Large Boulder"
         if self.unlocked_sizes[120]:
             self.huge_boulder_button.text = "Huge Boulder"
+        if self.unlocked_sizes[150]:
+            self.golden_boulder_button.text = "Golden Boulder"
+
 
         # Set up music end event
         pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
@@ -391,7 +397,8 @@ class Game:
             40: (1, 1),    # (money, xp) for small boulder
             50: (2, 2),    # medium boulder
             80: (5, 5),    # large boulder
-            120: (10, 10)  # huge boulder
+            120: (10, 10), # huge boulder
+            150: (50, 50)  # golden boulder
         }
 
         # Instead of spawning default boulder, spawn the last used boulder size
@@ -406,6 +413,15 @@ class Game:
         except pygame.error as e:
             print(f"Failed to load hill_2 texture: {e}")
             self.hill_2_texture = None
+
+        # Load Golden Boulder Sprite
+        try:
+            self.golden_boulder_sprite = pygame.image.load(os.path.join(assets_dir, 'golden_boulder.png')).convert_alpha()
+        except pygame.error as e:
+            print(f"Failed to load golden_boulder.png: {e}")
+            self.golden_boulder_sprite = None
+
+        self.golden_boulder_unlocked = False  # Track if the golden boulder is unlocked
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -850,6 +866,7 @@ class Game:
             self.medium_boulder_button.handle_event(event)
             self.large_boulder_button.handle_event(event)
             self.huge_boulder_button.handle_event(event)
+            self.golden_boulder_button.handle_event(event)
             
         # ... rest of existing handle_events code ...
         # Handle continuous jumping when key is held
@@ -1038,6 +1055,7 @@ class Game:
                 str(size): unlocked
                 for size, unlocked in self.unlocked_sizes.items()
             },
+            'golden_boulder_unlocked': self.unlocked_sizes[150],
             'last_boulder_size': current_boulder_size,  # Save current boulder size
             'hill_unlocked': self.hill_unlocked  # Save hill unlocked state
         }
@@ -1046,6 +1064,91 @@ class Game:
                 json.dump(save_data, f, indent=2)
         except Exception as e:
             print(f"Failed to save progress: {e}")
+
+    def get_golden_boulder_text(self):
+        # Return the appropriate button text based on unlock status
+        return "Golden Boulder" if self.unlocked_sizes[150] else "Golden Boulder (1000$)"
+
+    def unlock_and_spawn_golden_boulder(self):
+        if not self.unlocked_sizes[150] and self.money >= 1000:
+            self.money -= 1000
+            self.unlocked_sizes[150] = True  # Unlock the golden boulder
+            self.golden_boulder_button.text = self.get_golden_boulder_text()  # Update button text
+            self.save_progress()  # Save the unlock status
+
+        if self.unlocked_sizes[150]:
+            self.spawn_boulder(150, 50, 50)  # Spawn golden boulder with larger size and higher rewards
+
+    def spawn_boulder(self, size=40, reward=None, xp_gain=None):
+        # Check cooldown
+        if self.spawn_cooldown > 0:
+            return
+            
+        # Only check unlocks, no cost per spawn
+        if not self.unlocked_sizes[size]:
+            return
+            
+        if self.current_boulder is not None:
+            self.space.remove(self.current_boulder['body'], self.current_boulder['shape'])
+            self.current_boulder = None
+
+        # Get rewards from mapping if not specified
+        if reward is None or xp_gain is None:
+            reward, xp_gain = self.boulder_rewards[size]  # Changed from .get() to direct access
+
+        # Determine spawn position based on Sisyphus's position
+        if self.sisyphus.position.x < 1250:
+            # Spawn in front of the first hill
+            boulder_position = (480, self.height - 250 - self.offset)
+        else:
+            # Spawn in front of the second hill
+            boulder_position = (1500, self.height - 250 - self.offset)
+
+        boulder_body, boulder_shape = self.create_boulder(size, boulder_position)
+        new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
+        self.current_boulder = new_boulder
+        self.boulder_reward = reward
+        self.boulder_xp_gain = xp_gain
+        
+        # Set spawn cooldown
+        self.spawn_cooldown = 10
+
+    def draw_boulders(self):
+        # Draw boulder sprites
+        for boulder in [self.current_boulder] + self.crushing_boulders:
+            if boulder is None:
+                continue
+            body = boulder['body']
+            shape = boulder['shape']
+            x, y = body.position
+            r = shape.radius
+
+            # Scale the sprite based on radius
+            sprite_size = int(2 * r) + 4  # +4 pixels padding
+            if sprite_size <= 0:
+                sprite_size = 10  # Minimum size to prevent errors
+
+            # Select appropriate sprite based on state
+            if boulder['state'] == 'normal':
+                if shape.radius == 150:  # Check if it's the golden boulder
+                    sprite = self.golden_boulder_sprite
+                else:
+                    sprite = self.boulder_sprite_gray
+            else:
+                sprite = self.boulder_sprite_orange
+
+            # Scale the sprite
+            scaled_sprite = pygame.transform.scale(sprite, (sprite_size, sprite_size))
+
+            # Rotate the sprite based on the boulder's angle
+            angle_degrees = -math.degrees(body.angle)
+            rotated_sprite = pygame.transform.rotate(scaled_sprite, angle_degrees)
+
+            # Get the rect of the rotated sprite and center it on the boulder's position
+            rotated_rect = rotated_sprite.get_rect(center=(x - self.camera_x, y))
+
+            # Blit the rotated sprite onto the screen
+            self.screen.blit(rotated_sprite, rotated_rect.topleft)
 
     def run(self):
         # Show splash screen first
@@ -1196,39 +1299,7 @@ class Game:
             self.space.debug_draw(self.draw_options)
             
             # Draw boulder sprites
-            for boulder in [self.current_boulder] + self.crushing_boulders:
-                if boulder is None:
-                    continue
-                body = boulder['body']
-                shape = boulder['shape']
-                x, y = body.position
-                r = shape.radius
-
-                # Scale the sprite based on radius
-                # Adding a slight padding to fully cover the debug circle
-                sprite_size = int(2 * r) + 4  # +4 pixels padding
-                if (sprite_size <= 0):
-                    sprite_size = 10  # Minimum size to prevent errors
-
-                # Select appropriate sprite based on state
-                if boulder['state'] == 'normal':
-                    sprite = self.boulder_sprite_gray
-                else:
-                    sprite = self.boulder_sprite_orange
-
-                # Scale the sprite
-                scaled_sprite = pygame.transform.scale(sprite, (sprite_size, sprite_size))
-
-                # **Rotate the sprite based on the boulder's angle**
-                # Pymunk's angle is in radians. Pygame rotates counter-clockwise, so invert the angle.
-                angle_degrees = -math.degrees(body.angle)
-                rotated_sprite = pygame.transform.rotate(scaled_sprite, angle_degrees)
-
-                # Get the rect of the rotated sprite and center it on the boulder's position
-                rotated_rect = rotated_sprite.get_rect(center=(x - self.camera_x, y))
-
-                # Blit the rotated sprite onto the screen
-                self.screen.blit(rotated_sprite, rotated_rect.topleft)
+            self.draw_boulders()  # Call the new draw_boulders method
 
             # Draw hill texture
             if self.hill_texture:
@@ -1309,6 +1380,11 @@ class Game:
                 self.next_button_timer -= 1
                 if self.next_button_timer <= 0:
                     self.next_button_pressed = False
+
+            # Draw Golden Boulder button
+            self.golden_boulder_button.visible = True
+            self.golden_boulder_button.enabled = self.money >= 1000 or self.unlocked_sizes[150]
+            self.golden_boulder_button.draw(self.screen)
 
             pygame.display.flip()
             self.clock.tick(60)

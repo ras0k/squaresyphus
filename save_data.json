@@ -1,12 +1,14 @@
 {
-  "money": 1413,
-  "strength_xp": 1088,
+  "money": 23893,
+  "strength_xp": 1090,
   "unlocked_sizes": {
     "40": true,
     "50": true,
     "80": true,
-    "120": true
+    "120": true,
+    "150": true
   },
-  "last_boulder_size": 80,
+  "golden_boulder_unlocked": true,
+  "last_boulder_size": 150,
   "hill_unlocked": true
 }
