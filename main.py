@@ -400,6 +400,13 @@ class Game:
         self.boulder_reward, self.boulder_xp_gain = self.boulder_rewards[last_boulder_size]
         self.spawn_boulder(last_boulder_size, self.boulder_reward, self.boulder_xp_gain)
 
+        # Load hill_2 texture
+        try:
+            self.hill_2_texture = pygame.image.load(os.path.join(assets_dir, 'hill_2.png')).convert_alpha()
+        except pygame.error as e:
+            print(f"Failed to load hill_2 texture: {e}")
+            self.hill_2_texture = None
+
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
         return False  # Returning False tells Pymunk to ignore the collision
@@ -768,10 +775,6 @@ class Game:
         return hill_body
 
     def draw_hill(self):
-        # Draw the pixel art hill texture
-        if self.hill_texture:
-            texture_pos = (400 + self.hill_x_offset - self.camera_x, 300 + self.hill_y_offset)
-            self.screen.blit(self.hill_texture, texture_pos)
 
         # Draw the original hill shape underneath with explicit pixel values
         hill_points = [
@@ -1232,6 +1235,11 @@ class Game:
             if self.hill_texture:
                 texture_pos = (400 + self.hill_x_offset - self.camera_x, 300 + self.hill_y_offset)
                 self.screen.blit(self.hill_texture, texture_pos)
+            
+                    # Draw hill_2 texture
+            if self.hill_2_texture:
+                hill_2_texture_pos = (1600 - self.camera_x, 202 + self.hill_y_offset)
+                self.screen.blit(self.hill_2_texture, hill_2_texture_pos)
 
             # Draw grass last
             self.draw_grass()
