@@ -6,9 +6,14 @@ import math
 import random
 import json
 import time
+import asyncio
+import platform
 
 # Initialize pygame mixer for audio
-pygame.mixer.init()
+try:
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+except:
+    print("Warning: Audio initialization failed")
 
 class Button:
     def __init__(self, x, y, width, height, text, callback):
@@ -782,30 +787,14 @@ class Game:
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                self.save_progress()  # Save before quitting
                 return False
-            
-            # Handle music end event
-            if event.type == pygame.USEREVENT + 1:  # Music ended
-                self.next_track()
-                
-            # Handle UI buttons
-            self.music_button.handle_event(event)
-            self.next_button.handle_event(event)
-            self.small_boulder_button.handle_event(event)
-            self.medium_boulder_button.handle_event(event)
-            self.large_boulder_button.handle_event(event)
-            self.huge_boulder_button.handle_event(event)
-            self.golden_boulder_button.handle_event(event)
-            
-        # ... rest of existing handle_events code ...
-        # Handle continuous jumping when key is held
-        keys = pygame.key.get_pressed()
-        if (keys[pygame.K_SPACE] or keys[pygame.K_w] or keys[pygame.K_UP]) and self.jump_cooldown <= 0 and self.is_grounded:
-            self.jump()
-            self.jump_cooldown = 30  # Set cooldown after jumping
-            self.is_grounded = False  # Immediately set grounded to false when jumping
-        
+            elif event.type == pygame.ACTIVEEVENT:
+                # Handle tab focus/unfocus
+                if event.state == 2:  # window focus changed
+                    if event.gain:
+                        pygame.mixer.music.unpause()
+                    else:
+                        pygame.mixer.music.pause()
         return True
 
     def move_sisyphus(self):
@@ -857,15 +846,16 @@ class Game:
         self.camera_x += (target_x - self.camera_x) * 0.1  # Smooth camera movement
         self.camera_x = max(0, min(self.camera_x, self.width - 800))  # Clamp camera position
 
-    def show_splash_screen(self):
+    async def show_splash_screen(self):
         if not self.splash_screen:
-            return
-            
-        fade_duration = 2000  # 2 seconds for splash screen fade out
+            return True
+        
+        fade_duration = 2000
         start_time = pygame.time.get_ticks()
         running = True
         
         while running:
+            await asyncio.sleep(0)
             current_time = pygame.time.get_ticks()
             elapsed = current_time - start_time
             
@@ -959,40 +949,36 @@ class Game:
             print(f"Failed to load next track: {e}")
 
     def load_save(self):
-        try:
-            with open(self.save_file, 'r') as f:
-                data = json.load(f)
-                # Convert string keys back to integers for unlocked_sizes
-                if 'unlocked_sizes' in data:
-                    data['unlocked_sizes'] = {
-                        int(size): unlocked 
-                        for size, unlocked in data['unlocked_sizes'].items()
-                    }
-                return data
-        except (FileNotFoundError, json.JSONDecodeError):
+        if platform.system() == "Emscripten":
+            try:
+                import javascript
+                saved_data = javascript.localStorage.getItem('save_data')
+                if saved_data:
+                    return json.loads(saved_data)
+            except ImportError:
+                print("Web storage not available")
             return {}
+        else:
+            try:
+                with open(self.save_file, 'r') as f:
+                    return json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                return {}
 
     def save_progress(self):
-        # Get current boulder size if one exists
-        current_boulder_size = None
-        if self.current_boulder:
-            current_boulder_size = int(self.current_boulder['shape'].radius)
-
-        save_data = {
-            'money': self.money,
-            'strength_xp': self.strength_xp,
-            'unlocked_sizes': {
-                str(size): unlocked
-                for size, unlocked in self.unlocked_sizes.items()
-            },
-            'golden_boulder_unlocked': self.unlocked_sizes[150],
-            'last_boulder_size': current_boulder_size
-        }
-        try:
+        if platform.system() == "Emscripten":
+            # Use localStorage for web
+            import javascript
+            save_data = {
+                'money': self.money,
+                'strength_xp': self.strength_xp,
+                'unlocked_sizes': self.unlocked_sizes
+            }
+            javascript.localStorage.setItem('save_data', json.dumps(save_data))
+        else:
+            # Normal file saving for desktop
             with open(self.save_file, 'w') as f:
-                json.dump(save_data, f, indent=2)
-        except Exception as e:
-            print(f"Failed to save progress: {e}")
+                json.dump(save_data, f)
 
     def get_golden_boulder_text(self):
         # Return the appropriate button text based on unlock status
@@ -1082,9 +1068,9 @@ class Game:
             # Blit the rotated sprite onto the screen
             self.screen.blit(rotated_sprite, rotated_rect.topleft)
 
-    def run(self):
+    async def run(self):
         # Show splash screen first
-        if not self.show_splash_screen():
+        if not await self.show_splash_screen():
             return
 
         # Ensure volume is 0 before starting music
@@ -1097,6 +1083,7 @@ class Game:
 
         running = True
         while running:
+            await asyncio.sleep(0)  # Let the browser breathe
             running = self.handle_events()
             self.move_sisyphus()
             self.update_camera()
@@ -1333,6 +1320,22 @@ class Game:
 
         self.save_progress()  # Save one final time before exiting
 
+    async def load_assets(self):
+        # Show loading progress
+        loading_font = pygame.font.Font(None, 36)
+        loading_text = loading_font.render("Loading...", True, (255, 255, 255))
+        loading_rect = loading_text.get_rect(center=(400, 300))
+        self.screen.blit(loading_text, loading_rect)
+        pygame.display.flip()
+        
+        # Load assets here
+        await asyncio.sleep(0)  # Let browser update display
+
 if __name__ == "__main__":
     game = Game()
-    game.run()
+    if platform.system() == "Emscripten":
+        # Web mode
+        asyncio.run(game.run())
+    else:
+        # Desktop mode
+        game.run()
