@@ -5,6 +5,7 @@ import os
 import math
 import random
 import json
+import time
 
 # Initialize pygame mixer for audio
 pygame.mixer.init()
@@ -76,7 +77,7 @@ class InputBox:
 class Game:
     def __init__(self):
         pygame.init()
-        self.width = 1725  # Initial width before Hill 2 is unlocked
+        self.width = 3400  # Always have full width for both hills
         self.height = 600  # Updated width to 1740px
         
         self.screen = pygame.display.set_mode(
@@ -372,13 +373,6 @@ class Game:
         if 'unlocked_sizes' in saved_data:
             self.unlocked_sizes.update(saved_data['unlocked_sizes'])
 
-        # Check if the player is over level 5 and unlock the second hill if necessary
-        if current_level >= 5:
-            self.unlock_new_hill()
-            if not saved_data.get('hill_unlocked', False):
-                self.create_level_up_particles()
-                self.display_new_hill_message()
-
         # Update button text based on unlocked status
         if self.unlocked_sizes[50]:
             self.medium_boulder_button.text = "Medium Boulder"
@@ -423,7 +417,9 @@ class Game:
             self.golden_boulder_sprite = None
 
         self.golden_boulder_unlocked = False  # Track if the golden boulder is unlocked
-        self.hill_unlocked = False  # Initialize hill_unlocked to False
+
+        # Initialize floating texts
+        self.floating_texts = []
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -458,29 +454,6 @@ class Game:
         if self.level_up_sound:
             self.level_up_sound.play()
 
-        # Check if level 5 is reached
-        if current_level == 5:
-            self.unlock_new_hill()
-
-    def unlock_new_hill(self):
-        # Set the map width to accommodate the second hill plus 600px after
-        self.width = 3400  # New width after Hill 2 is unlocked
-
-        # Adjust the walls and ground to match the new map size
-        self.update_walls()
-        self.update_ground()
-
-        # Mark the hill as unlocked in the save data
-        self.hill_unlocked = True
-
-    def update_walls(self):
-        # Remove existing walls
-        for wall in self.walls:
-            self.space.remove(wall)
-        
-        # Create new walls with updated map size
-        self.walls = self.create_walls()
-
     def create_walls(self):
         walls = []
         wall_body = pymunk.Body(body_type=pymunk.Body.STATIC)
@@ -504,13 +477,6 @@ class Game:
         
         return walls
 
-    def update_ground(self):
-        # Remove existing ground
-        self.space.remove(self.ground)
-
-        # Create new ground with updated map size
-        self.ground = self.create_ground_poly()
-
     def create_ground_poly(self):
         # Create a ground as a static polygon with thickness
         ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
@@ -525,37 +491,6 @@ class Game:
         ground_shape.color = pygame.Color(139, 69, 19)  # Change ground color to match mountain fill color
         self.space.add(ground_body, ground_shape)
         return ground_body
-
-    def create_taller_hill(self):
-        hill_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        
-        # Define a taller hill shape with explicit pixel values
-        hill_points = [
-            (1600, self.height - self.offset),          # Left base
-            (1940, self.height - 240 - self.offset),    # Left peak, taller by 100 pixels
-            (2040, self.height - 240 - self.offset),    # Right peak, taller by 100 pixels
-            (2380, self.height - self.offset)           # Right base
-        ]
-        
-        hill_shapes = []
-        for i in range(len(hill_points) - 1):
-            segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
-            segment.friction = self.friction
-            segment.collision_type = 2  # Set collision type for hill
-            segment.color = pygame.Color(139, 69, 19)  # Change hill color to match mountain fill color
-            hill_shapes.append(segment)
-        
-        self.space.add(hill_body, *hill_shapes)
-        return hill_body
-
-    def display_new_hill_message(self):
-        # Display a message indicating the new hill is unlocked
-        message = "New Hill Unlocked!"
-        message_surface = self.font.render(message, True, (255, 0, 0))  # Red color for visibility
-        message_rect = message_surface.get_rect(center=(self.width // 4, 50))  # Centered at the top of the first half
-        self.screen.blit(message_surface, message_rect)
-        pygame.display.flip()
-        pygame.time.delay(2000)  # Display for 2 seconds
 
     def create_level_up_particles(self):
         # Create particles for visual effect
@@ -770,36 +705,54 @@ class Game:
     def create_hill(self):
         hill_body = pymunk.Body(body_type=pymunk.Body.STATIC)
         
-        # Create a more complex hill shape
-        hill_points = [
+        # Create both hills' shapes
+        hill1_points = [
             (600, self.height - self.offset),          # Left base
             (840, self.height - 140 - self.offset),    # Left peak
-            (900, self.height - 140 - self.offset),   # Right peak
+            (900, self.height - 140 - self.offset),    # Right peak
             (1140, self.height - self.offset)          # Right base
         ]
         
+        hill2_points = [
+            (1600, self.height - self.offset),          # Left base
+            (1940, self.height - 240 - self.offset),    # Left peak, taller
+            (2040, self.height - 240 - self.offset),    # Right peak, taller
+            (2380, self.height - self.offset)           # Right base
+        ]
+        
         hill_shapes = []
-        for i in range(len(hill_points) - 1):
-            segment = pymunk.Segment(hill_body, hill_points[i], hill_points[i+1], 5)
-            segment.friction = self.friction
-            segment.collision_type = 2  # Set collision type for hill
-            segment.color = pygame.Color(139, 69, 19)  # Change hill color to match mountain fill color
-            hill_shapes.append(segment)
+        # Create segments for both hills
+        for points in [hill1_points, hill2_points]:
+            for i in range(len(points) - 1):
+                segment = pymunk.Segment(hill_body, points[i], points[i+1], 5)
+                segment.friction = self.friction
+                segment.collision_type = 2  # Set collision type for hill
+                segment.color = pygame.Color(139, 69, 19)  # Brown color
+                hill_shapes.append(segment)
         
         self.space.add(hill_body, *hill_shapes)
         return hill_body
 
     def draw_hill(self):
-
-        # Draw the original hill shape underneath with explicit pixel values
-        hill_points = [
+        # Draw the first hill shape
+        hill1_points = [
             (600, self.height - self.offset),          # Left base
             (840, self.height - 140 - self.offset),    # Left peak
-            (900, self.height - 140 - self.offset),   # Right peak
+            (900, self.height - 140 - self.offset),    # Right peak
             (1140, self.height - self.offset)          # Right base
         ]
-        pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill_points])
-        pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill_points], 5)
+        pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill1_points])
+        pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill1_points], 5)
+
+        # Draw the second hill shape
+        hill2_points = [
+            (1600, self.height - self.offset),          # Left base
+            (1940, self.height - 240 - self.offset),    # Left peak
+            (2040, self.height - 240 - self.offset),    # Right peak
+            (2380, self.height - self.offset)           # Right base
+        ]
+        pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill2_points])
+        pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill2_points], 5)
 
     def create_clouds(self):
         clouds = []
@@ -1055,8 +1008,7 @@ class Game:
                 for size, unlocked in self.unlocked_sizes.items()
             },
             'golden_boulder_unlocked': self.unlocked_sizes[150],
-            'last_boulder_size': current_boulder_size,  # Save current boulder size
-            'hill_unlocked': self.hill_unlocked  # Save hill unlocked state
+            'last_boulder_size': current_boulder_size
         }
         try:
             with open(self.save_file, 'w') as f:
@@ -1216,13 +1168,13 @@ class Game:
                     boulder_detected = True
                     reward_multiplier = 1  # Hill 1 reward multiplier
 
-                # Check top sensor for Hill 2 only if unlocked
-                if self.hill_unlocked:
-                    hill2_top_x = 1930
-                    hill2_top_y = self.height - 300 - self.offset
-                    if (hill2_top_x < boulder.position.x < hill2_top_x + 100):
-                        boulder_detected = True
-                        reward_multiplier = 2  # Hill 2 reward multiplier
+                # Check top sensor for Hill 2 (always available)
+                hill2_top_x = 1990  # Adjust this to match the center of hill 2's peak
+                hill2_top_y = self.height - 240 - self.offset  # Adjust for hill 2's height
+                if (hill2_top_x - 50 < boulder.position.x < hill2_top_x + 50 and 
+                    hill2_top_y - 50 < boulder.position.y < hill2_top_y + 50):
+                    boulder_detected = True
+                    reward_multiplier = 2  # Hill 2 reward multiplier
 
             # Increment counter when boulder enters detection area
             if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
@@ -1230,7 +1182,7 @@ class Game:
                 self.money += reward_multiplier * self.boulder_reward
                 
                 # Spawn money particles above the correct hill
-                is_hill2 = (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100) if self.hill_unlocked else False
+                is_hill2 = (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100)
                 self.spawn_money_particles(reward_multiplier * self.boulder_reward, hill2=is_hill2)
                 
                 # Play money pickup sound
@@ -1310,8 +1262,8 @@ class Game:
                 texture_pos = (400 + self.hill_x_offset - self.camera_x, 300 + self.hill_y_offset)
                 self.screen.blit(self.hill_texture, texture_pos)
             
-                    # Draw hill_2 texture only if unlocked
-            if self.hill_unlocked and self.hill_2_texture:
+                    # Draw hill_2 texture (always)
+            if self.hill_2_texture:
                 hill_2_texture_pos = (1600 - self.camera_x, 202 + self.hill_y_offset)
                 self.screen.blit(self.hill_2_texture, hill_2_texture_pos)
 
@@ -1401,6 +1353,40 @@ class Game:
         xp_needed = self.calculate_xp_required(current_level)
         self.strength_xp += xp_needed
         self.level_up()
+
+    def show_reward_text(self, reward_amount, position):
+        reward_text = f"+${reward_amount}"
+        self.floating_texts.append({
+            'text': reward_text,
+            'position': position,
+            'creation_time': time.time(),
+            'duration': 2.0,  # Text will show for 2 seconds
+            'color': (0, 255, 0)  # Green color
+        })
+
+    def draw_floating_texts(self):
+        current_time = time.time()
+        # Update and draw floating texts
+        for text in self.floating_texts[:]:
+            elapsed = current_time - text['creation_time']
+            if elapsed > text['duration']:
+                self.floating_texts.remove(text)
+                continue
+            
+            # Calculate alpha for fade out
+            alpha = 255 * (1 - (elapsed / text['duration']))
+            
+            # Render text with larger font size
+            font = pygame.font.Font(None, 48)  # Increased font size
+            text_surface = font.render(text['text'], True, text['color'])
+            text_surface.set_alpha(int(alpha))
+            
+            # Calculate screen position - make it float higher
+            screen_x = text['position'][0] - self.camera_x - text_surface.get_width() / 2  # Center horizontally
+            screen_y = text['position'][1] - (elapsed * 100) - 100  # Float higher and start higher
+            
+            # Draw this at the very end of the frame to be above everything
+            self.screen.blit(text_surface, (screen_x, screen_y))
 
 if __name__ == "__main__":
     game = Game()
