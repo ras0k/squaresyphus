@@ -32,48 +32,6 @@ class Button:
             if self.rect.collidepoint(event.pos) and self.enabled and self.visible:  # Check visibility
                 self.callback()
 
-class InputBox:
-    def __init__(self, x, y, w, h, text=''):
-        self.rect = pygame.Rect(x, y, w, h)
-        self.color = (200, 200, 200)
-        self.text = text
-        self.txt_surface = pygame.font.Font(None, 32).render(text, True, self.color)
-        self.active = False
-
-    def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            # If the user clicked on the input_box rect.
-            if self.rect.collidepoint(event.pos):
-                # Toggle the active variable.
-                self.active = not self.active
-            else:
-                self.active = False
-            # Change the current color of the input box.
-            self.color = (0, 0, 0) if self.active else (200, 200, 200)
-        if event.type == pygame.KEYDOWN:
-            if self.active:
-                if event.key == pygame.K_RETURN:
-                    self.active = False
-                    self.color = (200, 200, 200)
-                elif event.key == pygame.K_BACKSPACE:
-                    self.text = self.text[:-1]
-                else:
-                    self.text += event.unicode
-                # Re-render the text.
-                self.txt_surface = pygame.font.Font(None, 32).render(self.text, True, self.color)
-
-    def draw(self, screen):
-        # Blit the text.
-        screen.blit(self.txt_surface, (self.rect.x+5, self.rect.y+5))
-        # Blit the rect.
-        pygame.draw.rect(screen, self.color, self.rect, 2)
-
-    def get_value(self):
-        try:
-            return float(self.text)
-        except ValueError:
-            return 0
-
 class Game:
     def __init__(self):
         pygame.init()
@@ -365,8 +323,8 @@ class Game:
         
         # Calculate initial strength based on loaded XP
         current_level = self.calculate_strength_level()
-        self.strength = 36 + (current_level - 1) * 20  # Base strength + level bonus
-        self.jump_force = 3000 + (current_level - 1) * 100  # Base jump + level bonus
+        self.strength = 36 + (current_level - 1) * 40  # Base strength + level bonus
+        self.jump_force = 3000 + (current_level - 1) * 300  # Base jump + level bonus
         
         # Properly merge saved unlocked sizes with defaults
         self.unlocked_sizes = default_unlocked_sizes.copy()
@@ -442,11 +400,8 @@ class Game:
     def level_up(self):
         # Apply level up effects
         current_level = self.calculate_strength_level()
-        # Increase strength by 20 per level
-        self.strength = 36 + (current_level - 1) * 20
-        # Add jump force scaling
-        self.jump_force = 3000 + (current_level - 1) * 100
-        
+        self.strength = 36 + (current_level - 1) * 40  # Base strength + level bonus
+        self.jump_force = 3000 + (current_level - 1) * 300  # Base jump + level bonus
         print(f"Level Up! Now level {current_level}")
         self.create_level_up_particles()
         
@@ -678,12 +633,15 @@ class Game:
             reward, xp_gain = self.boulder_rewards[size]  # Changed from .get() to direct access
 
         # Determine spawn position based on Sisyphus's position
-        if self.sisyphus.position.x < 1250:
+        if self.sisyphus.position.x < 900:  # Before/at hill 1 peak
             # Spawn in front of the first hill
             boulder_position = (480, self.height - 250 - self.offset)
-        else:
+        elif self.sisyphus.position.x < 2040:  # Before/at hill 2 peak
             # Spawn in front of the second hill
             boulder_position = (1500, self.height - 250 - self.offset)
+        else:
+            # Spawn after the second hill, beyond its right base (2380 + some padding)
+            boulder_position = (2500, self.height - 250 - self.offset)
 
         boulder_body, boulder_shape = self.create_boulder(size, boulder_position)
         new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
@@ -1048,12 +1006,15 @@ class Game:
             reward, xp_gain = self.boulder_rewards[size]  # Changed from .get() to direct access
 
         # Determine spawn position based on Sisyphus's position
-        if self.sisyphus.position.x < 1250:
+        if self.sisyphus.position.x < 900:  # Before/at hill 1 peak
             # Spawn in front of the first hill
             boulder_position = (480, self.height - 250 - self.offset)
-        else:
+        elif self.sisyphus.position.x < 2040:  # Before/at hill 2 peak
             # Spawn in front of the second hill
             boulder_position = (1500, self.height - 250 - self.offset)
+        else:
+            # Spawn after the second hill, beyond its right base (2380 + some padding)
+            boulder_position = (2500, self.height - 250 - self.offset)
 
         boulder_body, boulder_shape = self.create_boulder(size, boulder_position)
         new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
@@ -1151,28 +1112,38 @@ class Game:
             boulder_detected = False
 
             # Define bottom sensor areas with explicit values
-            left_sensor_x = 600
-            right_sensor_x = 1140
+            hill1_left_sensor_x = 600
+            hill1_right_sensor_x = 1140
+            hill2_left_sensor_x = 1600
+            hill2_right_sensor_x = 2380
             sensor_y = self.height - 40 - self.offset
             sensor_size = 50
 
             if self.current_boulder and self.current_boulder['state'] == 'normal':
                 boulder = self.current_boulder['body']
                 # Check if boulder is at bottom sensors
-                if self.boulder_at_bottom or boulder.position.x < left_sensor_x or boulder.position.x > right_sensor_x:
+                if (self.boulder_at_bottom or boulder.position.x < hill1_left_sensor_x or 
+                    (boulder.position.x > hill1_right_sensor_x and boulder.position.x < hill2_left_sensor_x) or 
+                    boulder.position.x > hill2_right_sensor_x):
                     self.boulder_at_bottom = True
 
-                # Check top sensor for Hill 1
-                if (hill_top_x - 50 < boulder.position.x < hill_top_x + 50 and 
-                    hill_top_y - 50 < boulder.position.y < hill_top_y + 50):
+                # Check top sensor for Hill 1 with adjusted detection area
+                hill1_top_x = 870
+                hill1_top_y = self.height - 190 - self.offset
+                detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
+                
+                if (hill1_top_x - detection_radius < boulder.position.x < hill1_top_x + detection_radius and 
+                    hill1_top_y - detection_radius < boulder.position.y < hill1_top_y + detection_radius):
                     boulder_detected = True
                     reward_multiplier = 1  # Hill 1 reward multiplier
 
-                # Check top sensor for Hill 2 (always available)
-                hill2_top_x = 1990  # Adjust this to match the center of hill 2's peak
-                hill2_top_y = self.height - 240 - self.offset  # Adjust for hill 2's height
-                if (hill2_top_x - 50 < boulder.position.x < hill2_top_x + 50 and 
-                    hill2_top_y - 50 < boulder.position.y < hill2_top_y + 50):
+                # Check top sensor for Hill 2 with adjusted detection area
+                hill2_top_x = 1990
+                hill2_top_y = self.height - 290 - self.offset
+                detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
+                
+                if (hill2_top_x - detection_radius < boulder.position.x < hill2_top_x + detection_radius and 
+                    hill2_top_y - detection_radius < boulder.position.y < hill2_top_y + detection_radius):
                     boulder_detected = True
                     reward_multiplier = 2  # Hill 2 reward multiplier
 
@@ -1234,11 +1205,6 @@ class Game:
             self.draw_particles()  # Draw particles behind the hill
             self.draw_hill()  # Draw filled hill
             self.draw_strength_stats()
-
-            # Draw everything in the correct order
-            self.screen.fill((135, 206, 235))  # Sky
-            self.draw_clouds()
-            self.draw_particles()
             
             # Draw the collision hill
             hill_points = [
@@ -1346,47 +1312,6 @@ class Game:
             self.clock.tick(60)
 
         self.save_progress()  # Save one final time before exiting
-
-    def debug_level_up(self):
-        # Add enough XP to reach next level
-        current_level = self.calculate_strength_level()
-        xp_needed = self.calculate_xp_required(current_level)
-        self.strength_xp += xp_needed
-        self.level_up()
-
-    def show_reward_text(self, reward_amount, position):
-        reward_text = f"+${reward_amount}"
-        self.floating_texts.append({
-            'text': reward_text,
-            'position': position,
-            'creation_time': time.time(),
-            'duration': 2.0,  # Text will show for 2 seconds
-            'color': (0, 255, 0)  # Green color
-        })
-
-    def draw_floating_texts(self):
-        current_time = time.time()
-        # Update and draw floating texts
-        for text in self.floating_texts[:]:
-            elapsed = current_time - text['creation_time']
-            if elapsed > text['duration']:
-                self.floating_texts.remove(text)
-                continue
-            
-            # Calculate alpha for fade out
-            alpha = 255 * (1 - (elapsed / text['duration']))
-            
-            # Render text with larger font size
-            font = pygame.font.Font(None, 48)  # Increased font size
-            text_surface = font.render(text['text'], True, text['color'])
-            text_surface.set_alpha(int(alpha))
-            
-            # Calculate screen position - make it float higher
-            screen_x = text['position'][0] - self.camera_x - text_surface.get_width() / 2  # Center horizontally
-            screen_y = text['position'][1] - (elapsed * 100) - 100  # Float higher and start higher
-            
-            # Draw this at the very end of the frame to be above everything
-            self.screen.blit(text_surface, (screen_x, screen_y))
 
 if __name__ == "__main__":
     game = Game()
