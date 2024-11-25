@@ -1,19 +1,5 @@
 {
     "preload": [
-      "assets/boulder_gray.png",
-      "assets/boulder_orange.png",
-      "assets/Clouds-Sheet.png",
-      "assets/grass.png",
-      "assets/hill_1.png",
-      "assets/hill_2.png",
-      "assets/golden_boulder.png",
-      "assets/music-icon.png",
-      "assets/next-icon.png",
-      "assets/level-up.mp3",
-      "assets/money-pickup.mp3",
-      "assets/jump.mp3",
-      "assets/Endless-Journey.mp3",
-      "assets/Endless-Ascent.mp3",
       "assets/splash.png"
     ]
   }
