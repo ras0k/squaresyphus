@@ -343,8 +343,8 @@ class Game:
         
         # Calculate initial strength based on loaded XP
         current_level = self.calculate_strength_level()
-        self.strength = 36 + (current_level - 1) * 40  # Base strength + level bonus
-        self.jump_force = 3000 + (current_level - 1) * 300  # Base jump + level bonus
+        self.strength = 36 + (current_level - 1) * 20  # Base strength + level bonus
+        self.jump_force = 3000 + (current_level - 1) * 200  # Base jump + level bonus
         
         # Properly merge saved unlocked sizes with defaults
         self.unlocked_sizes = default_unlocked_sizes.copy()
@@ -420,8 +420,8 @@ class Game:
     def level_up(self):
         # Apply level up effects
         current_level = self.calculate_strength_level()
-        self.strength = 36 + (current_level - 1) * 40  # Base strength + level bonus
-        self.jump_force = 3000 + (current_level - 1) * 300  # Base jump + level bonus
+        self.strength = 36 + (current_level - 1) * 20  # Base strength + level bonus
+        self.jump_force = 3000 + (current_level - 1) * 200  # Base jump + level bonus
         print(f"Level Up! Now level {current_level}")
         self.create_level_up_particles()
         
@@ -1034,7 +1034,7 @@ class Game:
             boulder_position = (1500, self.height - 250 - self.offset)
         else:
             # Spawn after the second hill, beyond its right base (2380 + some padding)
-            boulder_position = (2500, self.height - 250 - self.offset)
+            boulder_position = (2800, self.height - 250 - self.offset)
 
         boulder_body, boulder_shape = self.create_boulder(size, boulder_position)
         new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
