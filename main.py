@@ -8,6 +8,7 @@ import json
 import time
 import asyncio
 import platform
+import sys
 
 # Initialize pygame mixer for audio
 try:
@@ -29,7 +30,7 @@ class Button:
     def draw(self, screen):
         if not self.visible:
             return
-            
+                
         # Draw golden border if it's the golden button
         if self.is_golden:
             # Use smaller font for golden button
@@ -52,16 +53,21 @@ class Button:
         screen.blit(text_surface, text_rect)
 
     def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.rect.collidepoint(event.pos) and self.enabled and self.visible:  # Check visibility
-                self.callback()
+        if (
+            event.type == pygame.MOUSEBUTTONDOWN
+            and event.button == 1
+            and self.enabled
+            and self.visible
+            and self.rect.collidepoint(event.pos)
+        ):
+            self.callback()
 
 class Game:
     def __init__(self):
         pygame.init()
         self.width = 3400  # Always have full width for both hills
         self.height = 600  # Updated width to 1740px
-        
+
         self.screen = pygame.display.set_mode(
             (800, 600),
             pygame.DOUBLEBUF | pygame.HWSURFACE,
@@ -76,42 +82,23 @@ class Game:
 
         # Load and set up background music
         assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
-        try:
-            self.music_tracks = [
-                os.path.join(assets_dir, 'Endless-Journey.mp3'),
-                os.path.join(assets_dir, 'Endless-Ascent.mp3')
-            ]
-            # Initialize music system with random track
-            self.music_enabled = True
-            self.music_volume = 0.0
-            self.target_volume = 0.7
-            self.initial_fade_frames = 300  # 5 seconds at 60fps
-            self.toggle_fade_frames = 60    # 1 second at 60fps
-            self.current_fade_frame = 0
-            self.is_fading = True          
-            self.is_initial_fade = True    
-            
-            # Pick random starting track
-            self.current_track = 1
-            
-            # Start playing the random track
-            pygame.mixer.music.load(self.music_tracks[self.current_track])
-            pygame.mixer.music.set_volume(0.0)
-            pygame.mixer.music.play(-1)
-            
-        except pygame.error as e:
-            print(f"Failed to load music: {e}")
+        self.assets_dir = assets_dir  # Save for later use
 
-        self.space = pymunk.Space()
-        self.space.gravity = (0, 900)
-        pygame.display.set_caption("Squaresyphus")
+        # Initialize game state
+        self.initialize_game_state()
 
-        self.space = pymunk.Space()
-        self.space.gravity = (0, 900)
-        # **Set collision_slop to zero to prevent penetration**
-        self.space.collision_slop = 0.0
+    def initialize_game_state(self):
+        self.load_assets()
+        self.setup_music()
+        self.setup_game_variables()
+        self.create_buttons()
+        self.setup_collision_handlers()
+        self.load_saved_data()
+        self.setup_music_end_event()
 
-        # **Load Boulder Sprites**
+    def load_assets(self):
+        assets_dir = self.assets_dir
+        # Load Boulder Sprites
         try:
             self.boulder_sprite_gray = pygame.image.load(os.path.join(assets_dir, 'boulder_gray.png')).convert_alpha()
         except pygame.error as e:
@@ -132,98 +119,47 @@ class Game:
             orange_surface.fill((255, 165, 0, 100))  # Semi-transparent orange
             self.boulder_sprite_orange.blit(orange_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
-        # Set default values that were previously in sliders
-        self.jump_force = 3000
-        self.strength = 36
-        self.strength_xp = 0  # Start with 0 XP
-        self.strength_level = 1
-        self.friction = 0.6
+        # Load cloud sprite sheet
+        try:
+            self.cloud_sprite_sheet = pygame.image.load(os.path.join(assets_dir, 'Clouds-Sheet.png')).convert_alpha()
+        except pygame.error as e:
+            print(f"Failed to load Clouds-Sheet.png: {e}")
+            self.cloud_sprite_sheet = None
 
-        # Track unlocked boulder sizes
-        self.unlocked_sizes = {
-            40: True,   # Small boulder always unlocked
-            50: False,  # Medium boulder starts locked
-            80: False,  # Large boulder size increased to 80
-            120: False, # Huge boulder starts locked
-            150: False  # Golden boulder starts locked
-        }
+        # Load grass sprite
+        try:
+            grass_raw = pygame.image.load(os.path.join(assets_dir, 'grass.png')).convert_alpha()
+            # Scale grass sprite up by 2x
+            grass_width = grass_raw.get_width() * 2
+            grass_height = grass_raw.get_height() * 2
+            self.grass_sprite = pygame.transform.scale(grass_raw, (grass_width, grass_height))
+        except pygame.error as e:
+            print(f"Failed to load grass.png: {e}")
+            self.grass_sprite = None
 
-        self.particles = []  # List to store particles
-        self.cloud_sprite_sheet = pygame.image.load(os.path.join(assets_dir, 'Clouds-Sheet.png')).convert_alpha()  # Load cloud sprite sheet
-        self.clouds = self.create_clouds()  # Create clouds
-        self.money_particles = []  # List to store money particles
-        self.money_texts = []  # List to store money text effects
-        grass_raw = pygame.image.load(os.path.join(assets_dir, 'grass.png')).convert_alpha()
-        # Scale grass sprite up by 2x
-        grass_width = grass_raw.get_width() * 2
-        grass_height = grass_raw.get_height() * 2
-        self.grass_sprite = pygame.transform.scale(grass_raw, (grass_width, grass_height))
-        # Debug position controls for grass
-        self.grass_x = 0  # Initial X offset
-        self.grass_y = 540  # Adjust initial Y position by raising 20 pixels
-        self.offset = 20   
+        # Load hill textures
+        try:
+            self.hill_texture = pygame.image.load(os.path.join(assets_dir, 'hill_1.png')).convert_alpha()
+            # Scale the hill texture by 2x
+            self.hill_texture = pygame.transform.scale(self.hill_texture, (self.hill_texture.get_width() * 2, self.hill_texture.get_height() * 2))
+        except pygame.error as e:
+            print(f"Failed to load hill texture: {e}")
+            self.hill_texture = None
 
-        self.sisyphus = self.create_sisyphus()
-        self.current_boulder = None
-        self.crushing_boulders = []
-        self.ground = self.create_ground_poly()  # Use the new ground creation method
-        self.walls = self.create_walls()
-        self.hill = self.create_hill()
-        
-        self.hill_light_color = (255, 255, 0)  # Bright yellow
-        self.hill_dark_color = (200, 200, 0)  # Darker yellow
-        self.current_hill_color = self.hill_dark_color
-        self.bottom_sensor_color = (255, 200, 200)  # Light red for bottom sensors
+        try:
+            self.hill_2_texture = pygame.image.load(os.path.join(assets_dir, 'hill_2.png')).convert_alpha()
+        except pygame.error as e:
+            print(f"Failed to load hill_2 texture: {e}")
+            self.hill_2_texture = None
 
-        self.clock = pygame.time.Clock()
+        # Load Golden Boulder Sprite
+        try:
+            self.golden_boulder_sprite = pygame.image.load(os.path.join(assets_dir, 'golden_boulder.png')).convert_alpha()
+        except pygame.error as e:
+            print(f"Failed to load golden_boulder.png: {e}")
+            self.golden_boulder_sprite = None
 
-        self.jump_cooldown = 0
-        self.camera_x = 0
-        self.is_grounded = False  # Track if player is touching ground
-        self.font = pygame.font.Font(None, 24)  # Font for debug text
-        
-        # Add counter for hill passes and money
-        self.hill_passes = 0
-        self.money = 0  # Start with 0 money
-        self.last_boulder_detected = False  # Track previous detection state
-        self.boulder_at_bottom = False  # Track if boulder has reached bottom
-
-        # Add boulder spawn cooldown
-        self.spawn_cooldown = 0
-
-        # **Add Collision Handlers to Ignore Specific Collisions**
-        # Crushing Boulders (4) vs Player (1) - Ignore
-        handler_crushing_player = self.space.add_collision_handler(4, 1)
-        handler_crushing_player.begin = self.ignore_collision
-
-        # Crushing Boulders (4) vs Normal Boulders (3) - Ignore
-        handler_crushing_boulders = self.space.add_collision_handler(4, 3)
-        handler_crushing_boulders.begin = self.ignore_collision
-
-        # Crushing Boulders (4) vs Crushing Boulders (4) - Ignore
-        handler_crushing_crushing = self.space.add_collision_handler(4, 4)
-        handler_crushing_crushing.begin = self.ignore_collision
-
-        # Create fonts - add money font
-        self.font = pygame.font.Font(None, 24)  # Regular font for debug text
-        self.money_font = pygame.font.Font(None, 48)  # Bigger font for money display
-        
-        # Move buttons to right side - calculate x position
-        button_width = 180
-        button_x = 800 - button_width - 10  # Right side with 10px padding
-        self.small_boulder_button = Button(button_x, 60, button_width, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
-        self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
-        self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (50$)", lambda: self.unlock_and_spawn(80))
-        self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (200$)", lambda: self.unlock_and_spawn(120))
-        self.golden_boulder_button = Button(button_x, 220, button_width, 30, self.get_golden_boulder_text(), self.unlock_and_spawn_golden_boulder)
-        self.golden_boulder_button.is_golden = True  # Set the golden border flag
-        
-        # Add music state tracking
-        self.music_enabled = True
-        self.current_track = 1
-        
         # Load music icons
-        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
         try:
             self.music_icon = pygame.image.load(os.path.join(assets_dir, 'music-icon.png')).convert_alpha()
             self.next_icon = pygame.image.load(os.path.join(assets_dir, 'next-icon.png')).convert_alpha()
@@ -235,16 +171,12 @@ class Game:
             self.music_icon = None
             self.next_icon = None
 
-        # Create music buttons
-        self.music_button = Button(20, 65, 32, 32, "", self.toggle_music)
-        self.next_button = Button(60, 65, 32, 32, "", self.next_track)  # Position it right after music button
-
         # Load sound effects with adjusted volume
         try:
             self.level_up_sound = pygame.mixer.Sound(os.path.join(assets_dir, 'level-up.mp3'))
             self.money_pickup_sound = pygame.mixer.Sound(os.path.join(assets_dir, 'money-pickup.mp3'))
             self.jump_sound = pygame.mixer.Sound(os.path.join(assets_dir, 'jump.mp3'))  # Add jump sound
-            
+
             # Adjust volumes
             self.level_up_sound.set_volume(0.2)  # Lowered from 0.7 to 0.2
             self.money_pickup_sound.set_volume(0.4)
@@ -264,63 +196,97 @@ class Game:
             print(f"Failed to load splash screen: {e}")
             self.splash_screen = None
 
-        # Music fade-in variables
-        self.music_volume = 0.7  # Start at full volume
-        self.target_volume = 0.7  # Target volume for music
-        self.fade_steps = 60  # Number of steps for fade (30 frames = 0.5 seconds at 60fps)
-        self.current_fade_step = 0
-        self.is_fading = False
-        pygame.mixer.music.set_volume(self.music_volume)
-
-        # Add hill texture with fixed position
-        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+    def setup_music(self):
+        # Load and set up background music
+        assets_dir = self.assets_dir
         try:
-            self.hill_texture = pygame.image.load(os.path.join(assets_dir, 'hill_1.png')).convert_alpha()
-            # Scale the hill texture by 2x
-            self.hill_texture = pygame.transform.scale(self.hill_texture, (self.hill_texture.get_width() * 2, self.hill_texture.get_height() * 2))
+            self.music_tracks = [
+                os.path.join(assets_dir, 'Endless-Journey.mp3'),
+                os.path.join(assets_dir, 'Endless-Ascent.mp3')
+            ]
+            # Initialize music system with random track
+            self.music_enabled = True
+            self.music_volume = 0.0
+            self.target_volume = 0.7
+            self.initial_fade_frames = 300  # 5 seconds at 60fps
+            self.toggle_fade_frames = 60    # 1 second at 60fps
+            self.current_fade_frame = 0
+            self.is_fading = True
+            self.is_initial_fade = True
+
+            # Pick random starting track
+            self.current_track = random.randint(0, len(self.music_tracks) - 1)
+
+            # Start playing the random track
+            pygame.mixer.music.load(self.music_tracks[self.current_track])
+            pygame.mixer.music.set_volume(0.0)
+            pygame.mixer.music.play(-1)
+
         except pygame.error as e:
-            print(f"Failed to load hill texture: {e}")
-            self.hill_texture = None
+            print(f"Failed to load music: {e}")
+
+    def setup_game_variables(self):
+        self.space = pymunk.Space()
+        self.space.gravity = (0, 900)
+        self.space.collision_slop = 0.0
+
+        self.jump_force = 3000
+        self.strength = 36
+        self.strength_xp = 0  # Start with 0 XP
+        self.strength_level = 1
+        self.friction = 0.6
+
+        self.unlocked_sizes = {
+            40: True,   # Small boulder always unlocked
+            50: False,  # Medium boulder starts locked
+            80: False,  # Large boulder size increased to 80
+            120: False, # Huge boulder starts locked
+            150: False  # Golden boulder starts locked
+        }
+
+        self.particles = []  # List to store particles
+        self.clouds = self.create_clouds()  # Create clouds
+        self.money_particles = []  # List to store money particles
+        self.money_texts = []  # List to store money text effects
+        self.grass_x = 0  # Initial X offset
+        self.grass_y = 540  # Adjust initial Y position by raising 20 pixels
+        self.offset = 20
+
+        self.sisyphus = self.create_sisyphus()
+        self.current_boulder = None
+        self.crushing_boulders = []
+        self.ground = self.create_ground_poly()
+        self.walls = self.create_walls()
+        self.hill = self.create_hill()
+
+        self.hill_light_color = (255, 255, 0)  # Bright yellow
+        self.hill_dark_color = (200, 200, 0)  # Darker yellow
+        self.current_hill_color = self.hill_dark_color
+        self.bottom_sensor_color = (255, 200, 200)  # Light red for bottom sensors
+
+        self.clock = pygame.time.Clock()
+
+        self.jump_cooldown = 0
+        self.camera_x = 0
+        self.is_grounded = False  # Track if player is touching ground
+        self.font = pygame.font.Font(None, 24)  # Font for debug text
+
+        # Add counter for hill passes and money
+        self.hill_passes = 0
+        self.money = 0  # Start with 0 money
+        self.last_boulder_detected = False  # Track previous detection state
+        self.boulder_at_bottom = False  # Track if boulder has reached bottom
+
+        # Add boulder spawn cooldown
+        self.spawn_cooldown = 0
+
+        # Create fonts - add money font
+        self.font = pygame.font.Font(None, 24)  # Regular font for debug text
+        self.money_font = pygame.font.Font(None, 48)  # Bigger font for money display
 
         # Fixed hill position
         self.hill_x_offset = 200
         self.hill_y_offset = 125
-
-        # Music fade variables
-        self.music_volume = 0.0
-        self.target_volume = 0.7
-        self.fade_steps = 120  # 2 seconds at 60fps
-        self.current_fade_step = 0
-        self.is_fading = False
-        self.current_track = random.randint(0, len(self.music_tracks) - 1)
-        self.music_enabled = True
-        pygame.mixer.music.set_volume(0.0)
-        
-        # Load and start music
-        try:
-            pygame.mixer.music.load(self.music_tracks[self.current_track])
-            pygame.mixer.music.play(-1)  # Start playing immediately but at volume 0
-            self.is_fading = True  # Start fading in
-        except pygame.error as e:
-            print(f"Failed to load music: {e}")
-
-        # Music system variables
-        self.music_enabled = True
-        self.music_volume = 0.0
-        self.target_volume = 0.7
-        self.initial_fade_frames = 300  # 5 seconds at 60fps
-        self.toggle_fade_frames = 60    # 1 second at 60fps
-        self.current_fade_frame = 0
-        self.is_fading = True          # Start with initial fade-in
-        self.is_initial_fade = True    # Track if this is the first fade
-        
-        # Start playing music immediately (at volume 0)
-        try:
-            pygame.mixer.music.load(self.music_tracks[self.current_track])
-            pygame.mixer.music.set_volume(0.0)
-            pygame.mixer.music.play(-1)
-        except pygame.error as e:
-            print(f"Failed to load music: {e}")
 
         # Add button press tracking
         self.next_button_pressed = False
@@ -329,8 +295,62 @@ class Game:
 
         # Add save file path
         self.save_file = os.path.join(os.path.dirname(__file__), 'save_data.json')
-        
-        # Define default unlocked sizes
+
+        # Initialize floating texts
+        self.floating_texts = []
+
+        # Define reward mapping
+        self.boulder_rewards = {
+            40: (1, 1),    # (money, xp) for small boulder
+            50: (2, 2),    # medium boulder
+            80: (5, 5),    # large boulder
+            120: (10, 10), # huge boulder
+            150: (50, 50)  # golden boulder
+        }
+
+    def create_buttons(self):
+        # Move buttons to right side - calculate x position
+        button_width = 180
+        button_x = 800 - button_width - 10  # Right side with 10px padding
+        self.small_boulder_button = Button(button_x, 60, button_width, 30, "Small Boulder", lambda: self.spawn_boulder(40, 1))
+        self.medium_boulder_button = Button(button_x, 100, button_width, 30, "Medium Boulder (10$)", lambda: self.unlock_and_spawn(50))
+        self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (50$)", lambda: self.unlock_and_spawn(80))
+        self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (200$)", lambda: self.unlock_and_spawn(120))
+        self.golden_boulder_button = Button(button_x, 220, button_width, 30, self.get_golden_boulder_text(), self.unlock_and_spawn_golden_boulder)
+        self.golden_boulder_button.is_golden = True  # Set the golden border flag
+
+        # Create music buttons
+        self.music_button = Button(20, 65, 32, 32, "", self.toggle_music)
+        self.next_button = Button(60, 65, 32, 32, "", self.next_track)  # Position it right after music button
+
+    def setup_collision_handlers(self):
+        # Add Collision Handlers to Ignore Specific Collisions
+        # Crushing Boulders (4) vs Player (1) - Ignore
+        handler_crushing_player = self.space.add_collision_handler(4, 1)
+        handler_crushing_player.begin = self.ignore_collision
+
+        # Crushing Boulders (4) vs Normal Boulders (3) - Ignore
+        handler_crushing_boulders = self.space.add_collision_handler(4, 3)
+        handler_crushing_boulders.begin = self.ignore_collision
+
+        # Crushing Boulders (4) vs Crushing Boulders (4) - Ignore
+        handler_crushing_crushing = self.space.add_collision_handler(4, 4)
+        handler_crushing_crushing.begin = self.ignore_collision
+
+    def load_saved_data(self):
+        # Load saved data first
+        saved_data = self.load_save()
+
+        # Initialize values with saved data or defaults
+        self.money = saved_data.get('money', 0)
+        self.strength_xp = saved_data.get('strength_xp', 0)
+
+        # Calculate initial strength based on loaded XP
+        current_level = self.calculate_strength_level()
+        self.strength = 36 + (current_level - 1) * 20  # Base strength + level bonus
+        self.jump_force = 3000 + (current_level - 1) * 200  # Base jump + level bonus
+
+        # Properly merge saved unlocked sizes with defaults
         default_unlocked_sizes = {
             40: True,   # Small boulder always unlocked
             50: False,  # Medium boulder starts locked
@@ -338,23 +358,9 @@ class Game:
             120: False, # Huge boulder starts locked
             150: False  # Golden boulder starts locked
         }
-        
-        # Load saved data first
-        saved_data = self.load_save()
-        
-        # Initialize values with saved data or defaults
-        self.money = saved_data.get('money', 0)
-        self.strength_xp = saved_data.get('strength_xp', 0)
-        
-        # Calculate initial strength based on loaded XP
-        current_level = self.calculate_strength_level()
-        self.strength = 36 + (current_level - 1) * 20  # Base strength + level bonus
-        self.jump_force = 3000 + (current_level - 1) * 200  # Base jump + level bonus
-        
-        # Properly merge saved unlocked sizes with defaults
         self.unlocked_sizes = default_unlocked_sizes.copy()
         if 'unlocked_sizes' in saved_data:
-            self.unlocked_sizes.update(saved_data['unlocked_sizes'])
+            self.unlocked_sizes.update({int(k): v for k, v in saved_data['unlocked_sizes'].items()})
 
         # Update button text based on unlocked status
         if self.unlocked_sizes[50]:
@@ -366,43 +372,15 @@ class Game:
         if self.unlocked_sizes[150]:
             self.golden_boulder_button.text = "Golden Boulder"
 
-
-        # Set up music end event
-        pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
-
-        # Define reward mapping
-        self.boulder_rewards = {
-            40: (1, 1),    # (money, xp) for small boulder
-            50: (2, 2),    # medium boulder
-            80: (5, 5),    # large boulder
-            120: (10, 10), # huge boulder
-            150: (50, 50)  # golden boulder
-        }
-
         # Instead of spawning default boulder, spawn the last used boulder size
         last_boulder_size = saved_data.get('last_boulder_size', 40)  # Default to small if not found
         # Get the correct rewards for the loaded boulder size
-        self.boulder_reward, self.boulder_xp_gain = self.boulder_rewards[last_boulder_size]
+        self.boulder_reward, self.boulder_xp_gain = self.boulder_rewards.get(last_boulder_size, (1, 1))
         self.spawn_boulder(last_boulder_size, self.boulder_reward, self.boulder_xp_gain)
 
-        # Load hill_2 texture
-        try:
-            self.hill_2_texture = pygame.image.load(os.path.join(assets_dir, 'hill_2.png')).convert_alpha()
-        except pygame.error as e:
-            print(f"Failed to load hill_2 texture: {e}")
-            self.hill_2_texture = None
-
-        # Load Golden Boulder Sprite
-        try:
-            self.golden_boulder_sprite = pygame.image.load(os.path.join(assets_dir, 'golden_boulder.png')).convert_alpha()
-        except pygame.error as e:
-            print(f"Failed to load golden_boulder.png: {e}")
-            self.golden_boulder_sprite = None
-
-        self.golden_boulder_unlocked = False  # Track if the golden boulder is unlocked
-
-        # Initialize floating texts
-        self.floating_texts = []
+    def setup_music_end_event(self):
+        # Set up music end event
+        pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -411,7 +389,7 @@ class Game:
     def calculate_xp_required(self, level):
         # Fixed XP requirements per level
         requirements = {
-            1: 5,    # Level 1->2: 10 XP
+            1: 5,    # Level 1->2: 5 XP
             2: 20,    # Level 2->3: 20 XP
             3: 50,    # Level 3->4: 50 XP
             4: 100,   # Level 4->5: 100 XP
@@ -429,7 +407,7 @@ class Game:
         self.jump_force = 3000 + (current_level - 1) * 200  # Base jump + level bonus
         print(f"Level Up! Now level {current_level}")
         self.create_level_up_particles()
-        
+
         # Play level up sound
         if self.level_up_sound:
             self.level_up_sound.play()
@@ -438,23 +416,23 @@ class Game:
         walls = []
         wall_body = pymunk.Body(body_type=pymunk.Body.STATIC)
         wall_thickness = 5
-        
+
         # Add the wall body to the space first
         self.space.add(wall_body)
-        
+
         # Left wall
         left_wall_shape = pymunk.Segment(wall_body, (0, 0), (0, self.height), wall_thickness)
         # Right wall - ensure it's at exactly self.width
         right_wall_shape = pymunk.Segment(wall_body, (self.width, 0), (self.width, self.height), wall_thickness)
         # Top wall
         top_wall_shape = pymunk.Segment(wall_body, (0, 0), (self.width, 0), wall_thickness)
-        
+
         for wall in [left_wall_shape, right_wall_shape, top_wall_shape]:
             wall.friction = self.friction
             wall.collision_type = 2  # Set collision type for walls
             self.space.add(wall)
             walls.append(wall)
-        
+
         return walls
 
     def create_ground_poly(self):
@@ -496,10 +474,10 @@ class Game:
     def draw_particles(self):
         # Draw particles on the screen
         for particle in self.particles:
-            pygame.draw.circle(self.screen, (255, 215, 0), 
-                (int(particle[0][0] - self.camera_x), int(particle[0][1])), 
+            pygame.draw.circle(self.screen, (255, 215, 0),
+                (int(particle[0][0] - self.camera_x), int(particle[0][1])),
                 int(particle[2]))
-        
+
         # Draw money texts with camera offset
         for text in self.money_texts:
             font = pygame.font.Font(None, text['size'])
@@ -521,9 +499,9 @@ class Game:
             y_pos = self.height - 340
 
         self.money_texts.append({
-            'text': f"+${amount}", 
+            'text': f"+${amount}",
             'pos': [x_pos, y_pos],  # Adjusted height to be above hills
-            'life': 1.0, 
+            'life': 1.0,
             'size': 48
         })
 
@@ -542,11 +520,11 @@ class Game:
     def calculate_xp_progress(self):
         current_level = self.calculate_strength_level()
         total_xp = self.calculate_xp_required(current_level)
-        
+
         # Calculate XP in current level
         xp_in_prev_levels = sum(self.calculate_xp_required(l) for l in range(1, current_level))
         current_level_xp = self.strength_xp - xp_in_prev_levels
-        
+
         return current_level_xp / total_xp
 
     def draw_strength_stats(self):
@@ -559,11 +537,11 @@ class Game:
         bar_width = 200
         bar_height = 20
         border = 2
-        
+
         # Draw border
         pygame.draw.rect(self.screen, (0, 0, 0), (10, 30, bar_width, bar_height))
         # Draw background
-        pygame.draw.rect(self.screen, (200, 200, 200), (10 + border, 30 + border, 
+        pygame.draw.rect(self.screen, (200, 200, 200), (10 + border, 30 + border,
                         bar_width - 2*border, bar_height - 2*border))
         # Draw progress
         progress = self.calculate_xp_progress()
@@ -588,22 +566,22 @@ class Game:
         sisyphus_shape = pymunk.Poly.create_box(sisyphus_body, (sisyphus_size, sisyphus_size))
         sisyphus_shape.friction = self.friction
         sisyphus_shape.color = pygame.Color('red')  # Change color to red
-        
+
         # Add collision handler to detect ground contact
         def begin_collision(arbiter, space, data):
             self.is_grounded = True
             return True
-            
+
         def separate_collision(arbiter, space, data):
             self.is_grounded = False
             return True
-            
+
         handler = self.space.add_collision_handler(1, 2)  # 1 for sisyphus, 2 for ground/platforms
         handler.begin = begin_collision
         handler.separate = separate_collision
-        
+
         sisyphus_shape.collision_type = 1  # Set collision type for sisyphus
-        
+
         self.space.add(sisyphus_body, sisyphus_shape)
         return sisyphus_body
 
@@ -611,7 +589,7 @@ class Game:
         boulder_mass = radius * 0.5
         boulder_moment = pymunk.moment_for_circle(boulder_mass, 0, radius)
         boulder_body = pymunk.Body(boulder_mass, boulder_moment)
-        
+
         # Use the provided position for spawning
         boulder_body.position = position
         boulder_shape = pymunk.Circle(boulder_body, radius)
@@ -624,7 +602,7 @@ class Game:
     def unlock_and_spawn(self, size):
         costs = {50: 10, 80: 50, 120: 200}  # Costs for boulders
         rewards = {50: (2, 2), 80: (5, 5), 120: (10, 10)}  # Updated rewards for boulders
-        
+
         if not self.unlocked_sizes[size] and self.money >= costs[size]:
             self.money -= costs[size]
             self.unlocked_sizes[size] = True
@@ -635,7 +613,7 @@ class Game:
                 self.large_boulder_button.text = "Large Boulder"
             else:
                 self.huge_boulder_button.text = "Huge Boulder"
-        
+
         if self.unlocked_sizes[size]:
             reward, xp_gain = rewards.get(size, (1, 1))  # Default to (1$, 1 XP) if not found
             self.spawn_boulder(size, reward, xp_gain)
@@ -644,11 +622,11 @@ class Game:
         # Check cooldown
         if self.spawn_cooldown > 0:
             return
-            
+
         # Only check unlocks, no cost per spawn
         if not self.unlocked_sizes[size]:
             return
-            
+
         if self.current_boulder is not None:
             self.space.remove(self.current_boulder['body'], self.current_boulder['shape'])
             self.current_boulder = None
@@ -673,7 +651,7 @@ class Game:
         self.current_boulder = new_boulder
         self.boulder_reward = reward
         self.boulder_xp_gain = xp_gain
-        
+
         # Set spawn cooldown
         self.spawn_cooldown = 10
 
@@ -687,7 +665,7 @@ class Game:
 
     def create_hill(self):
         hill_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        
+
         # Create both hills' shapes
         hill1_points = [
             (600, self.height - self.offset),          # Left base
@@ -695,14 +673,14 @@ class Game:
             (900, self.height - 140 - self.offset),    # Right peak
             (1140, self.height - self.offset)          # Right base
         ]
-        
+
         hill2_points = [
             (1600, self.height - self.offset),          # Left base
             (1940, self.height - 240 - self.offset),    # Left peak, taller
             (2040, self.height - 240 - self.offset),    # Right peak, taller
             (2380, self.height - self.offset)           # Right base
         ]
-        
+
         hill_shapes = []
         # Create segments for both hills
         for points in [hill1_points, hill2_points]:
@@ -712,7 +690,7 @@ class Game:
                 segment.collision_type = 2  # Set collision type for hill
                 segment.color = pygame.Color(139, 69, 19)  # Brown color
                 hill_shapes.append(segment)
-        
+
         self.space.add(hill_body, *hill_shapes)
         return hill_body
 
@@ -739,6 +717,8 @@ class Game:
 
     def create_clouds(self):
         clouds = []
+        if self.cloud_sprite_sheet is None:
+            return clouds
         for _ in range(15):
             x = random.randint(0, self.width)
             y = random.randint(0, 200)  # Clouds in the upper part of the screen
@@ -752,33 +732,37 @@ class Game:
         return clouds
 
     def draw_clouds(self):
+        if self.cloud_sprite_sheet is None:
+            return
         for cloud in self.clouds:
             x, y, width, height, speed, opacity, cloud_type, scale = cloud  # Unpack scale
-            
+
             # Calculate scaled dimensions
             scaled_width = int(width * scale)
             scaled_height = int(height * scale)
-            
+
             cloud_surface = pygame.Surface((scaled_width, scaled_height), pygame.SRCALPHA)
-            
+
             # Create subsurface for the cloud type
             cloud_sprite = self.cloud_sprite_sheet.subsurface((cloud_type * 32, 0, 32, 32))
             # Scale the sprite using the random scale
             scaled_sprite = pygame.transform.scale(cloud_sprite, (scaled_width, scaled_height))
             # Blit the scaled sprite
             cloud_surface.blit(scaled_sprite, (0, 0))
-            
+
             cloud_surface.set_alpha(opacity)
-            self.screen.blit(cloud_surface, (x, y))
+            self.screen.blit(cloud_surface, (x - self.camera_x, y))
             cloud[0] += speed  # Move cloud right
             if cloud[0] > self.width:  # Reset cloud position if it goes off screen
                 cloud[0] = -scaled_width  # Use scaled width for reset position
 
     def draw_grass(self):
+        if self.grass_sprite is None:
+            return
         # Calculate how many times we need to tile the grass horizontally
         grass_width = self.grass_sprite.get_width()
         num_tiles = (self.width // grass_width) + 2  # +2 to ensure coverage during scrolling
-        
+
         # Draw grass tiles
         for i in range(num_tiles):
             x = i * grass_width + (self.grass_x % grass_width) - self.camera_x
@@ -787,7 +771,9 @@ class Game:
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                self.save_progress()
                 return False
+
             elif event.type == pygame.ACTIVEEVENT:
                 # Handle tab focus/unfocus
                 if event.state == 2:  # window focus changed
@@ -795,13 +781,34 @@ class Game:
                         pygame.mixer.music.unpause()
                     else:
                         pygame.mixer.music.pause()
+
+            # Handle music end event
+            if event.type == pygame.USEREVENT + 1:  # Music ended
+                self.next_track()
+
+            # Handle UI buttons
+            self.music_button.handle_event(event)
+            self.next_button.handle_event(event)
+            self.small_boulder_button.handle_event(event)
+            self.medium_boulder_button.handle_event(event)
+            self.large_boulder_button.handle_event(event)
+            self.huge_boulder_button.handle_event(event)
+            self.golden_boulder_button.handle_event(event)
+
+        # Handle continuous jumping when key is held
+        keys = pygame.key.get_pressed()
+        if (keys[pygame.K_SPACE] or keys[pygame.K_w] or keys[pygame.K_UP]) and self.jump_cooldown <= 0 and self.is_grounded:
+            self.jump()
+            self.jump_cooldown = 30  # Set cooldown after jumping
+            self.is_grounded = False  # Immediately set grounded to false when jumping
+
         return True
 
     def move_sisyphus(self):
         keys = pygame.key.get_pressed()
         base_move_force = 100  # Base movement force
         strength = self.strength
-         # Scale sisyphus based on strength directly
+        # Scale sisyphus based on strength directly
         for shape in self.space.shapes:
             if shape.body == self.sisyphus:
                 current_size = shape.get_vertices()[2][0] - shape.get_vertices()[0][0]
@@ -813,7 +820,6 @@ class Game:
                     new_shape.collision_type = 1  # Set collision type for resized sisyphus
                     self.space.add(new_shape)
 
-               
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             move_force = -base_move_force
             # Apply additional force based on strength when pushing boulders
@@ -835,7 +841,7 @@ class Game:
         # Play jump sound
         if self.jump_sound:
             self.jump_sound.play()
-            
+
         # Apply jump force in world coordinates (always upwards)
         jump_force = (0, -self.jump_force)
         self.sisyphus.apply_impulse_at_world_point(jump_force, self.sisyphus.position)
@@ -849,25 +855,25 @@ class Game:
     async def show_splash_screen(self):
         if not self.splash_screen:
             return True
-        
+
         fade_duration = 2000
         start_time = pygame.time.get_ticks()
         running = True
-        
+
         while running:
             await asyncio.sleep(0)
             current_time = pygame.time.get_ticks()
             elapsed = current_time - start_time
-            
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return False
                 if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
                     running = False
-            
+
             # Fill screen with black
             self.screen.fill((0, 0, 0))
-            
+
             # Calculate alpha for fade out
             if elapsed < fade_duration:
                 alpha = 255
@@ -875,16 +881,16 @@ class Game:
                 alpha = max(0, 255 - ((elapsed - fade_duration) * 255 // 1000))
                 if alpha == 0:
                     running = False
-            
+
             # Draw splash screen with fade, centered in window
             splash_surface = self.splash_screen.copy()
             splash_surface.set_alpha(alpha)
             splash_rect = splash_surface.get_rect(center=(400, 300))  # Center in 800x600 window
             self.screen.blit(splash_surface, splash_rect)
-            
+
             pygame.display.flip()
             self.clock.tick(60)
-        
+
         return True
 
     def toggle_music(self):
@@ -892,7 +898,7 @@ class Game:
         self.is_fading = True
         self.is_initial_fade = False  # This is a toggle fade
         self.current_fade_frame = 0
-        
+
         if not self.music_enabled:
             self.target_volume = 0.0
         else:
@@ -905,7 +911,7 @@ class Game:
             self.current_fade_frame += 1
             fade_frames = self.initial_fade_frames if self.is_initial_fade else self.toggle_fade_frames
             progress = min(self.current_fade_frame / fade_frames, 1.0)
-            
+
             if self.music_enabled:
                 # Fading in
                 self.music_volume = min(progress * self.target_volume, self.target_volume)
@@ -913,9 +919,9 @@ class Game:
                 # Fading out - start from current volume instead of max volume
                 start_volume = self.music_volume
                 self.music_volume = max(0, start_volume * (1.0 - progress))
-            
+
             pygame.mixer.music.set_volume(self.music_volume)
-            
+
             if self.current_fade_frame >= fade_frames:
                 self.is_fading = False
                 self.is_initial_fade = False
@@ -926,14 +932,14 @@ class Game:
         # Visual feedback for button
         self.next_button_pressed = True
         self.next_button_timer = self.next_button_press_duration
-        
+
         # Switch to next track
         self.current_track = (self.current_track + 1) % len(self.music_tracks)
         try:
             pygame.mixer.music.load(self.music_tracks[self.current_track])
             pygame.mixer.music.set_volume(0.0)  # Start at 0 volume
             pygame.mixer.music.play(-1)
-            
+
             # Only start fade-in if music is enabled
             if self.music_enabled:
                 self.is_fading = True
@@ -944,15 +950,15 @@ class Game:
                 pygame.mixer.music.set_volume(0.0)
                 self.music_volume = 0.0
                 self.is_fading = False
-            
+
         except pygame.error as e:
             print(f"Failed to load next track: {e}")
 
     def load_save(self):
         if platform.system() == "Emscripten":
             try:
-                import javascript
-                saved_data = javascript.localStorage.getItem('save_data')
+                import js
+                saved_data = js.localStorage.getItem('save_data')
                 if saved_data:
                     return json.loads(saved_data)
             except ImportError:
@@ -966,15 +972,16 @@ class Game:
                 return {}
 
     def save_progress(self):
+        save_data = {
+            'money': self.money,
+            'strength_xp': self.strength_xp,
+            'unlocked_sizes': {str(k): v for k, v in self.unlocked_sizes.items()},
+            'last_boulder_size': self.current_boulder['shape'].radius if self.current_boulder else 40
+        }
         if platform.system() == "Emscripten":
             # Use localStorage for web
-            import javascript
-            save_data = {
-                'money': self.money,
-                'strength_xp': self.strength_xp,
-                'unlocked_sizes': self.unlocked_sizes
-            }
-            javascript.localStorage.setItem('save_data', json.dumps(save_data))
+            import js
+            js.localStorage.setItem('save_data', json.dumps(save_data))
         else:
             # Normal file saving for desktop
             with open(self.save_file, 'w') as f:
@@ -994,43 +1001,6 @@ class Game:
         if self.unlocked_sizes[150]:
             self.spawn_boulder(150, 50, 50)  # Spawn golden boulder with larger size and higher rewards
 
-    def spawn_boulder(self, size=40, reward=None, xp_gain=None):
-        # Check cooldown
-        if self.spawn_cooldown > 0:
-            return
-            
-        # Only check unlocks, no cost per spawn
-        if not self.unlocked_sizes[size]:
-            return
-            
-        if self.current_boulder is not None:
-            self.space.remove(self.current_boulder['body'], self.current_boulder['shape'])
-            self.current_boulder = None
-
-        # Get rewards from mapping if not specified
-        if reward is None or xp_gain is None:
-            reward, xp_gain = self.boulder_rewards[size]  # Changed from .get() to direct access
-
-        # Determine spawn position based on Sisyphus's position
-        if self.sisyphus.position.x < 900:  # Before/at hill 1 peak
-            # Spawn in front of the first hill
-            boulder_position = (480, self.height - 250 - self.offset)
-        elif self.sisyphus.position.x < 2040:  # Before/at hill 2 peak
-            # Spawn in front of the second hill
-            boulder_position = (1500, self.height - 250 - self.offset)
-        else:
-            # Spawn after the second hill, beyond its right base (2380 + some padding)
-            boulder_position = (2800, self.height - 250 - self.offset)
-
-        boulder_body, boulder_shape = self.create_boulder(size, boulder_position)
-        new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
-        self.current_boulder = new_boulder
-        self.boulder_reward = reward
-        self.boulder_xp_gain = xp_gain
-        
-        # Set spawn cooldown
-        self.spawn_cooldown = 10
-
     def draw_boulders(self):
         # Draw boulder sprites
         for boulder in [self.current_boulder] + self.crushing_boulders:
@@ -1048,7 +1018,7 @@ class Game:
 
             # Select appropriate sprite based on state
             if boulder['state'] == 'normal':
-                if shape.radius == 150:  # Check if it's the golden boulder
+                if shape.radius == 150 and self.golden_boulder_sprite is not None:  # Check if it's the golden boulder
                     sprite = self.golden_boulder_sprite
                 else:
                     sprite = self.boulder_sprite_gray
@@ -1076,7 +1046,7 @@ class Game:
         # Ensure volume is 0 before starting music
         self.music_volume = 0.0
         pygame.mixer.music.set_volume(0.0)
-        
+
         # Start fade-in process
         self.fade_start_time = pygame.time.get_ticks()
         pygame.mixer.music.play()
@@ -1084,258 +1054,235 @@ class Game:
         running = True
         while running:
             await asyncio.sleep(0)  # Let the browser breathe
-            running = self.handle_events()
-            self.move_sisyphus()
-            self.update_camera()
-            self.update_particles()
-            self.update_music_fade()
+            try:
+                running = self.handle_events()
+                self.move_sisyphus()
+                self.update_camera()
+                self.update_particles()
+                self.update_music_fade()
 
-            # Update friction for all objects when friction slider changes
-            if self.current_boulder and self.current_boulder['state'] == 'normal':
-                self.current_boulder['shape'].friction = self.friction * 0.8
-            for boulder in self.crushing_boulders:
-                boulder['shape'].friction = self.friction * 0.8
-            for wall in self.walls:
-                wall.friction = self.friction
-            for shape in self.space.shapes:
-                if isinstance(shape, pymunk.Segment) or isinstance(shape, pymunk.Poly):
-                    shape.friction = self.friction * 0.8
+                # Update friction for all objects when friction slider changes
+                if self.current_boulder and self.current_boulder['state'] == 'normal':
+                    self.current_boulder['shape'].friction = self.friction * 0.8
+                for boulder in self.crushing_boulders:
+                    boulder['shape'].friction = self.friction * 0.8
+                for wall in self.walls:
+                    wall.friction = self.friction
+                for shape in self.space.shapes:
+                    if isinstance(shape, pymunk.Segment) or isinstance(shape, pymunk.Poly):
+                        shape.friction = self.friction * 0.8
 
-            # Update crushing boulders
-            for boulder in self.crushing_boulders[:]:  # Iterate over a copy
-                boulder['timer'] -= 1
-                if boulder['timer'] <= 0:
-                    # Remove boulder from space and from list
-                    self.space.remove(boulder['body'], boulder['shape'])
-                    self.crushing_boulders.remove(boulder)
+                # Update crushing boulders
+                for boulder in self.crushing_boulders[:]:  # Iterate over a copy
+                    boulder['timer'] -= 1
+                    if boulder['timer'] <= 0:
+                        # Remove boulder from space and from list
+                        self.space.remove(boulder['body'], boulder['shape'])
+                        self.crushing_boulders.remove(boulder)
 
-            # Initialize hill2_top_x and hill2_top_y with default values
-            hill2_top_x = 0
-            hill2_top_y = 0
+                # Initialize hill2_top_x and hill2_top_y with default values
+                hill2_top_x = 0
+                hill2_top_y = 0
 
-            # Check if any boulder is in the detection area at the top
-            hill_top_x = 870
-            hill_top_y = self.height - 190 - self.offset
-            boulder_detected = False
+                # Check if any boulder is in the detection area at the top
+                hill_top_x = 870
+                hill_top_y = self.height - 190 - self.offset
+                boulder_detected = False
 
-            # Define bottom sensor areas with explicit values
-            hill1_left_sensor_x = 600
-            hill1_right_sensor_x = 1140
-            hill2_left_sensor_x = 1600
-            hill2_right_sensor_x = 2380
-            sensor_y = self.height - 40 - self.offset
-            sensor_size = 50
+                # Define bottom sensor areas with explicit values
+                hill1_left_sensor_x = 600
+                hill1_right_sensor_x = 1140
+                hill2_left_sensor_x = 1600
+                hill2_right_sensor_x = 2380
+                sensor_y = self.height - 40 - self.offset
+                sensor_size = 50
 
-            if self.current_boulder and self.current_boulder['state'] == 'normal':
-                boulder = self.current_boulder['body']
-                # Check if boulder is at bottom sensors
-                if (self.boulder_at_bottom or boulder.position.x < hill1_left_sensor_x or 
-                    (boulder.position.x > hill1_right_sensor_x and boulder.position.x < hill2_left_sensor_x) or 
-                    boulder.position.x > hill2_right_sensor_x):
-                    self.boulder_at_bottom = True
+                if self.current_boulder and self.current_boulder['state'] == 'normal':
+                    boulder = self.current_boulder['body']
+                    # Check if boulder is at bottom sensors
+                    if (self.boulder_at_bottom or boulder.position.x < hill1_left_sensor_x or
+                        (boulder.position.x > hill1_right_sensor_x and boulder.position.x < hill2_left_sensor_x) or
+                        boulder.position.x > hill2_right_sensor_x):
+                        self.boulder_at_bottom = True
 
-                # Check top sensor for Hill 1 with adjusted detection area
-                hill1_top_x = 870
-                hill1_top_y = self.height - 190 - self.offset
-                detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
-                
-                if (hill1_top_x - detection_radius < boulder.position.x < hill1_top_x + detection_radius and 
-                    hill1_top_y - detection_radius < boulder.position.y < hill1_top_y + detection_radius):
-                    boulder_detected = True
-                    reward_multiplier = 1  # Hill 1 reward multiplier
+                    # Check top sensor for Hill 1 with adjusted detection area
+                    hill1_top_x = 870
+                    hill1_top_y = self.height - 190 - self.offset
+                    detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
 
-                # Check top sensor for Hill 2 with adjusted detection area
-                hill2_top_x = 1990
-                hill2_top_y = self.height - 290 - self.offset
-                detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
-                
-                if (hill2_top_x - detection_radius < boulder.position.x < hill2_top_x + detection_radius and 
-                    hill2_top_y - detection_radius < boulder.position.y < hill2_top_y + detection_radius):
-                    boulder_detected = True
-                    reward_multiplier = 2  # Hill 2 reward multiplier
+                    if (hill1_top_x - detection_radius < boulder.position.x < hill1_top_x + detection_radius and
+                        hill1_top_y - detection_radius < boulder.position.y < hill1_top_y + detection_radius):
+                        boulder_detected = True
+                        reward_multiplier = 1  # Hill 1 reward multiplier
 
-            # Increment counter when boulder enters detection area
-            if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
-                self.hill_passes += 1
-                self.money += reward_multiplier * self.boulder_reward
-                
-                # Spawn money particles above the correct hill
-                is_hill2 = (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100)
-                self.spawn_money_particles(reward_multiplier * self.boulder_reward, hill2=is_hill2)
-                
-                # Play money pickup sound
-                if self.money_pickup_sound:
-                    self.money_pickup_sound.play()
-                
-                # Calculate XP based on boulder size with fixed values
-                if self.current_boulder:
-                    boulder_radius = self.current_boulder['shape'].radius
-                    xp_gain = {
-                        40: 1,   # Small boulder: 1 XP
-                        50: 2,   # Medium boulder: 2 XP
-                        80: 5,  # Large boulder: 5 XP
-                        120: 10  # Huge boulder: 10 XP
-                    }.get(boulder_radius, 1)
-                    
-                    old_level = self.calculate_strength_level()
-                    self.strength_xp += xp_gain
-                    new_level = self.calculate_strength_level()
-                    
-                    # Check for level up
-                    if new_level > old_level:
-                        self.level_up()
-                
-                self.boulder_at_bottom = False
-            
-            self.last_boulder_detected = boulder_detected
-            self.current_hill_color = self.hill_light_color if boulder_detected else self.hill_dark_color
+                    # Check top sensor for Hill 2 with adjusted detection area
+                    hill2_top_x = 1990
+                    hill2_top_y = self.height - 290 - self.offset
+                    detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
 
-            # Update jump cooldown
-            if self.jump_cooldown > 0:
-                self.jump_cooldown -= 1
+                    if (hill2_top_x - detection_radius < boulder.position.x < hill2_top_x + detection_radius and
+                        hill2_top_y - detection_radius < boulder.position.y < hill2_top_y + detection_radius):
+                        boulder_detected = True
+                        reward_multiplier = 2  # Hill 2 reward multiplier
 
-            # Update spawn cooldown
-            if self.spawn_cooldown > 0:
-                self.spawn_cooldown -= 1
-                
-            # Draw cooldown text if active
-            if self.spawn_cooldown > 0:
-                cooldown_text = self.font.render(f"Spawn Cooldown: {self.spawn_cooldown//60 + 1}s", True, (200, 0, 0))
-                self.screen.blit(cooldown_text, (10, 310))
+                # Increment counter when boulder enters detection area
+                if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
+                    self.hill_passes += 1
+                    self.money += reward_multiplier * self.boulder_reward
 
-            # Step the physics simulation
-            self.space.step(1/60.0)
-             
-            # Clear the screen
-            self.screen.fill((135, 206, 235))  # Fill with sky blue color
-            self.draw_clouds()  # Draw clouds
-            self.draw_particles()  # Draw particles behind the hill
-            self.draw_hill()  # Draw filled hill
-            self.draw_strength_stats()
-            
-            # Draw the collision hill
-            hill_points = [
-                (600, self.height - self.offset),          # Left base
-                (840, self.height - 140 - self.offset),    # Left peak
-                (900, self.height - 140 - self.offset),   # Right peak
-                (1140, self.height - self.offset)          # Right base
-            ]
-            pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill_points])
-            pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill_points], 5)
-            
-            # Draw the physics objects
-            self.draw_options.transform = pymunk.Transform(tx=-self.camera_x, ty=0)
-            self.space.debug_draw(self.draw_options)
-            
-            # Draw boulder sprites
-            self.draw_boulders()  # Call the new draw_boulders method
+                    # Spawn money particles above the correct hill
+                    is_hill2 = (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100)
+                    self.spawn_money_particles(reward_multiplier * self.boulder_reward, hill2=is_hill2)
 
-            # Draw hill texture
-            if self.hill_texture:
-                texture_pos = (400 + self.hill_x_offset - self.camera_x, 300 + self.hill_y_offset)
-                self.screen.blit(self.hill_texture, texture_pos)
-            
-                    # Draw hill_2 texture (always)
-            if self.hill_2_texture:
-                hill_2_texture_pos = (1600 - self.camera_x, 202 + self.hill_y_offset)
-                self.screen.blit(self.hill_2_texture, hill_2_texture_pos)
+                    # Play money pickup sound
+                    if self.money_pickup_sound:
+                        self.money_pickup_sound.play()
 
-            # Draw grass last
-            self.draw_grass()
+                    # Calculate XP based on boulder size with fixed values
+                    if self.current_boulder:
+                        boulder_radius = self.current_boulder['shape'].radius
+                        xp_gain = {
+                            40: 1,   # Small boulder: 1 XP
+                            50: 2,   # Medium boulder: 2 XP
+                            80: 5,  # Large boulder: 5 XP
+                            120: 10  # Huge boulder: 10 XP
+                        }.get(boulder_radius, 1)
 
-            # Draw UI elements in this specific order
-            # Draw money (top right)
-            money_text = self.money_font.render(f"${self.money}", True, (0, 100, 0))
-            money_rect = money_text.get_rect(topright=(780, 10))
-            self.screen.blit(money_text, money_rect)
+                        old_level = self.calculate_strength_level()
+                        self.strength_xp += xp_gain
+                        new_level = self.calculate_strength_level()
 
-            # Draw strength stats (top left)
-            self.draw_strength_stats()
+                        # Check for level up
+                        if new_level > old_level:
+                            self.level_up()
 
-            # Draw boulder buttons with next potential upgrade
-            # Small boulder is always shown and enabled
-            self.small_boulder_button.visible = True
-            self.small_boulder_button.enabled = True
-            self.small_boulder_button.draw(self.screen)
-            
-            # Medium boulder
-            if self.unlocked_sizes[50] or self.money >= 10 or self.unlocked_sizes[40]:
-                self.medium_boulder_button.visible = True
-                self.medium_boulder_button.enabled = self.unlocked_sizes[50] or self.money >= 10
-                self.medium_boulder_button.draw(self.screen)
-            else:
-                self.medium_boulder_button.visible = False
-            
-            # Large boulder - Fix the conditions here
-            if self.unlocked_sizes[80] or self.unlocked_sizes[50]:  # Show if unlocked or previous size is unlocked
-                self.large_boulder_button.visible = True
-                self.large_boulder_button.enabled = self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 50)  # Fixed cost check
-                self.large_boulder_button.draw(self.screen)
-            else:
-                self.large_boulder_button.visible = False
-            
-            # Huge boulder
-            if self.unlocked_sizes[120] or self.unlocked_sizes[80]:
-                self.huge_boulder_button.visible = True
-                self.huge_boulder_button.enabled = self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 200)
-                self.huge_boulder_button.draw(self.screen)
-            else:
-                self.huge_boulder_button.visible = False
+                    self.boulder_at_bottom = False
 
-            # Draw music button and icon
-            self.music_button.draw(self.screen)
-            if self.music_icon:
-                if self.music_enabled:
-                    self.music_icon.set_alpha(255)
+                self.last_boulder_detected = boulder_detected
+                self.current_hill_color = self.hill_light_color if boulder_detected else self.hill_dark_color
+
+                # Update jump cooldown
+                if self.jump_cooldown > 0:
+                    self.jump_cooldown -= 1
+
+                # Update spawn cooldown
+                if self.spawn_cooldown > 0:
+                    self.spawn_cooldown -= 1
+
+                # Step the physics simulation
+                self.space.step(1/60.0)
+
+                # Clear the screen
+                self.screen.fill((135, 206, 235))  # Fill with sky blue color
+                self.draw_clouds()  # Draw clouds
+                self.draw_particles()  # Draw particles behind the hill
+                self.draw_hill()  # Draw filled hill
+                self.draw_strength_stats()
+
+                # Draw the physics objects
+                self.draw_options.transform = pymunk.Transform(tx=-self.camera_x, ty=0)
+                self.space.debug_draw(self.draw_options)
+
+                # Draw boulder sprites
+                self.draw_boulders()  # Call the new draw_boulders method
+
+                # Draw hill texture
+                if self.hill_texture:
+                    texture_pos = (400 + self.hill_x_offset - self.camera_x, 300 + self.hill_y_offset)
+                    self.screen.blit(self.hill_texture, texture_pos)
+
+                # Draw hill_2 texture (always)
+                if self.hill_2_texture:
+                    hill_2_texture_pos = (1600 - self.camera_x, 202 + self.hill_y_offset)
+                    self.screen.blit(self.hill_2_texture, hill_2_texture_pos)
+
+                # Draw grass last
+                self.draw_grass()
+
+                # Draw UI elements in this specific order
+                # Draw money (top right)
+                money_text = self.money_font.render(f"${self.money}", True, (0, 100, 0))
+                money_rect = money_text.get_rect(topright=(780, 10))
+                self.screen.blit(money_text, money_rect)
+
+                # Draw strength stats (top left)
+                self.draw_strength_stats()
+
+                # Draw boulder buttons with next potential upgrade
+                # Small boulder is always shown and enabled
+                self.small_boulder_button.visible = True
+                self.small_boulder_button.enabled = True
+                self.small_boulder_button.draw(self.screen)
+
+                # Medium boulder
+                if self.unlocked_sizes[50] or self.money >= 10 or self.unlocked_sizes[40]:
+                    self.medium_boulder_button.visible = True
+                    self.medium_boulder_button.enabled = self.unlocked_sizes[50] or self.money >= 10
+                    self.medium_boulder_button.draw(self.screen)
                 else:
-                    self.music_icon.set_alpha(128)
-                self.screen.blit(self.music_icon, (20, 65))
-            
-            # Draw next button and icon
-            self.next_button.draw(self.screen)
-            if self.next_icon:
+                    self.medium_boulder_button.visible = False
+
+                # Large boulder - Fix the conditions here
+                if self.unlocked_sizes[80] or self.unlocked_sizes[50]:  # Show if unlocked or previous size is unlocked
+                    self.large_boulder_button.visible = True
+                    self.large_boulder_button.enabled = self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 50)  # Fixed cost check
+                    self.large_boulder_button.draw(self.screen)
+                else:
+                    self.large_boulder_button.visible = False
+
+                # Huge boulder
+                if self.unlocked_sizes[120] or self.unlocked_sizes[80]:
+                    self.huge_boulder_button.visible = True
+                    self.huge_boulder_button.enabled = self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 200)
+                    self.huge_boulder_button.draw(self.screen)
+                else:
+                    self.huge_boulder_button.visible = False
+
+                # Draw music button and icon
+                self.music_button.draw(self.screen)
+                if self.music_icon:
+                    if self.music_enabled:
+                        self.music_icon.set_alpha(255)
+                    else:
+                        self.music_icon.set_alpha(128)
+                    self.screen.blit(self.music_icon, (20, 65))
+
+                # Draw next button and icon
+                self.next_button.draw(self.screen)
+                if self.next_icon:
+                    if self.next_button_pressed:
+                        # Create a greyed out version of the icon
+                        grey_icon = self.next_icon.copy()
+                        grey_surface = pygame.Surface(self.next_icon.get_size(), pygame.SRCALPHA)
+                        grey_surface.fill((128, 128, 128, 128))
+                        grey_icon.blit(grey_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                        self.screen.blit(grey_icon, (60, 65))
+                    else:
+                        self.screen.blit(self.next_icon, (60, 65))
+                # Update next button timer
                 if self.next_button_pressed:
-                    # Create a greyed out version of the icon
-                    grey_icon = self.next_icon.copy()
-                    grey_surface = pygame.Surface(self.next_icon.get_size(), pygame.SRCALPHA)
-                    grey_surface.fill((128, 128, 128, 128))
-                    grey_icon.blit(grey_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-                    self.screen.blit(grey_icon, (60, 65))
-                else:
-                    self.screen.blit(self.next_icon, (60, 65))
-            
-            # Update next button timer
-            if self.next_button_pressed:
-                self.next_button_timer -= 1
-                if self.next_button_timer <= 0:
-                    self.next_button_pressed = False
+                    self.next_button_timer -= 1
+                    if self.next_button_timer <= 0:
+                        self.next_button_pressed = False
 
-            # Draw Golden Boulder button
-            self.golden_boulder_button.visible = True
-            self.golden_boulder_button.enabled = self.money >= 1000 or self.unlocked_sizes[150]
-            self.golden_boulder_button.draw(self.screen)
+                # Draw Golden Boulder button
+                self.golden_boulder_button.visible = True
+                self.golden_boulder_button.enabled = self.money >= 1000 or self.unlocked_sizes[150]
+                self.golden_boulder_button.draw(self.screen)
 
-            pygame.display.flip()
-            self.clock.tick(60)
+                pygame.display.flip()
+                self.clock.tick(60)
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                running = False
 
         self.save_progress()  # Save one final time before exiting
 
-    async def load_assets(self):
-        # Show loading progress
-        loading_font = pygame.font.Font(None, 36)
-        loading_text = loading_font.render("Loading...", True, (255, 255, 255))
-        loading_rect = loading_text.get_rect(center=(400, 300))
-        self.screen.blit(loading_text, loading_rect)
-        pygame.display.flip()
-        
-        # Load assets here
-        await asyncio.sleep(0)  # Let browser update display
-
 if __name__ == "__main__":
     game = Game()
-    if platform.system() == "Emscripten":
+    if platform.system() == "emscripten":
         # Web mode
         asyncio.run(game.run())
     else:
         # Desktop mode
-        game.run()
+        asyncio.run(game.run())
