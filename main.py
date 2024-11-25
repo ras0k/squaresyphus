@@ -17,9 +17,28 @@ class Button:
         self.callback = callback
         self.font = pygame.font.Font(None, 24)
         self.enabled = True
-        self.visible = True  # Add visibility flag
+        self.visible = True
+        self.is_golden = False  # Add flag for golden border
+        self.font_size = 24  # Default font size
 
     def draw(self, screen):
+        if not self.visible:
+            return
+            
+        # Draw golden border if it's the golden button
+        if self.is_golden:
+            # Use smaller font for golden button
+            self.font = pygame.font.Font(None, 23)  # Reduced by 1pt
+            border_rect = self.rect.inflate(6, 6)  # Slightly larger rect for border
+            pygame.draw.rect(screen, (255, 215, 0), border_rect)  # Gold color
+            # Draw inner golden border
+            inner_border = self.rect.inflate(2, 2)
+            pygame.draw.rect(screen, (218, 165, 32), inner_border)  # Darker gold
+        else:
+            # Use default font size for other buttons
+            self.font = pygame.font.Font(None, 24)
+
+        # Draw main button
         color = (150, 150, 150) if self.enabled else (100, 100, 100)
         pygame.draw.rect(screen, color, self.rect)
         text_color = (0, 0, 0) if self.enabled else (185, 185, 185)
@@ -192,6 +211,7 @@ class Game:
         self.large_boulder_button = Button(button_x, 140, button_width, 30, "Large Boulder (50$)", lambda: self.unlock_and_spawn(80))
         self.huge_boulder_button = Button(button_x, 180, button_width, 30, "Huge Boulder (200$)", lambda: self.unlock_and_spawn(120))
         self.golden_boulder_button = Button(button_x, 220, button_width, 30, self.get_golden_boulder_text(), self.unlock_and_spawn_golden_boulder)
+        self.golden_boulder_button.is_golden = True  # Set the golden border flag
         
         # Add music state tracking
         self.music_enabled = True
@@ -641,7 +661,7 @@ class Game:
             boulder_position = (1500, self.height - 250 - self.offset)
         else:
             # Spawn after the second hill, beyond its right base (2380 + some padding)
-            boulder_position = (2500, self.height - 250 - self.offset)
+            boulder_position = (2800, self.height - 250 - self.offset)
 
         boulder_body, boulder_shape = self.create_boulder(size, boulder_position)
         new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
