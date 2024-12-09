@@ -6,6 +6,7 @@ import math
 import random
 import json
 import time
+import sys
 
 # Initialize pygame mixer for audio
 pygame.mixer.init()
@@ -335,8 +336,15 @@ class Game:
         self.next_button_timer = 0
         self.next_button_press_duration = 5  # 60 frames = 1 second at 60fps
 
-        # Add save file path
-        self.save_file = os.path.join(os.path.dirname(__file__), 'save_data.json')
+        # Update save file path to work with both development and exe
+        if getattr(sys, 'frozen', False):
+            # If running as exe
+            application_path = os.path.dirname(sys.executable)
+        else:
+            # If running in development
+            application_path = os.path.dirname(__file__)
+            
+        self.save_file = os.path.join(application_path, 'save_data.json')
         
         # Load saved data first
         saved_data = self.load_save()
