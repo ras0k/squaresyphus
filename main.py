@@ -37,10 +37,10 @@ class Button:
         else:
             # Use default font size for other buttons
             self.font = pygame.font.Font(None, 24)
+            color = (150, 150, 150) if self.enabled else (100, 100, 100)
+            pygame.draw.rect(screen, color, self.rect)
 
-        # Draw main button
-        color = (150, 150, 150) if self.enabled else (100, 100, 100)
-        pygame.draw.rect(screen, color, self.rect)
+        # Draw text
         text_color = (0, 0, 0) if self.enabled else (185, 185, 185)
         text_surface = self.font.render(self.text, True, text_color)
         text_rect = text_surface.get_rect(center=self.rect.center)
