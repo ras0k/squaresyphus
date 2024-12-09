@@ -370,7 +370,7 @@ class Game:
             40: (1, 1),    # (money, xp) for small boulder
             50: (2, 2),    # medium boulder
             80: (5, 5),    # large boulder
-            120: (10, 10), # huge boulder
+            120: (20, 20), # huge boulder
             150: (50, 50)  # golden boulder
         }
 
@@ -398,6 +398,10 @@ class Game:
 
         # Initialize floating texts
         self.floating_texts = []
+
+        self.start_time = None  # Initialize start time for the speedrun timer
+        self.elapsed_time = 0  # Initialize elapsed time
+        self.total_elapsed_time = 0  # Total elapsed time including previous sessions
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -968,6 +972,7 @@ class Game:
                         int(size): unlocked 
                         for size, unlocked in data['unlocked_sizes'].items()
                     }
+                self.total_elapsed_time = data.get('elapsed_time', 0)  # Load the total elapsed time
                 return data
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
@@ -978,6 +983,13 @@ class Game:
         if self.current_boulder:
             current_boulder_size = int(self.current_boulder['shape'].radius)
 
+        # Calculate total time before saving
+        if self.start_time:
+            current_session_time = (pygame.time.get_ticks() - self.start_time) / 1000
+            total_time = self.total_elapsed_time + current_session_time
+        else:
+            total_time = self.total_elapsed_time
+
         save_data = {
             'money': self.money,
             'strength_xp': self.strength_xp,
@@ -986,7 +998,8 @@ class Game:
                 for size, unlocked in self.unlocked_sizes.items()
             },
             'golden_boulder_unlocked': self.unlocked_sizes[150],
-            'last_boulder_size': current_boulder_size
+            'last_boulder_size': current_boulder_size,
+            'elapsed_time': total_time  # Save the actual total time
         }
         try:
             with open(self.save_file, 'w') as f:
@@ -1095,6 +1108,7 @@ class Game:
         self.fade_start_time = pygame.time.get_ticks()
         pygame.mixer.music.play()
 
+        self.start_time = pygame.time.get_ticks()  # Start the timer when the game starts
         running = True
         while running:
             running = self.handle_events()
@@ -1102,6 +1116,10 @@ class Game:
             self.update_camera()
             self.update_particles()
             self.update_music_fade()
+
+            # Update the elapsed time
+            current_session_time = (pygame.time.get_ticks() - self.start_time) / 1000  # Convert to seconds
+            self.elapsed_time = self.total_elapsed_time + current_session_time
 
             # Update friction for all objects when friction slider changes
             if self.current_boulder and self.current_boulder['state'] == 'normal':
@@ -1328,10 +1346,20 @@ class Game:
             self.golden_boulder_button.enabled = self.money >= 1000 or self.unlocked_sizes[150]
             self.golden_boulder_button.draw(self.screen)
 
+            # Draw the speedrun timer
+            self.draw_speedrun_timer()
+
             pygame.display.flip()
             self.clock.tick(60)
 
         self.save_progress()  # Save one final time before exiting
+
+    def draw_speedrun_timer(self):
+        # Draw the speedrun timer on the screen
+        timer_font = pygame.font.Font(None, 36)  # Use a larger font for the timer
+        timer_text = timer_font.render(f"Time: {self.elapsed_time:.2f}s", True, (0, 0, 0))
+        # Position it in the bottom left corner
+        self.screen.blit(timer_text, (10, self.height - 62))
 
 if __name__ == "__main__":
     game = Game()

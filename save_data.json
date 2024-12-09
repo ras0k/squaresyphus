@@ -1,6 +1,6 @@
 {
-  "money": 7936,
-  "strength_xp": 224,
+  "money": 7947,
+  "strength_xp": 233,
   "unlocked_sizes": {
     "40": true,
     "50": true,
@@ -9,5 +9,6 @@
     "150": true
   },
   "golden_boulder_unlocked": true,
-  "last_boulder_size": 150
+  "last_boulder_size": 80,
+  "elapsed_time": 23.991
 }
