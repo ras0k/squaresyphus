@@ -41,7 +41,7 @@ class Button:
             pygame.draw.rect(screen, color, self.rect)
 
         # Draw text
-        text_color = (0, 0, 0) if self.enabled else (185, 185, 185)
+        text_color = (0, 0, 0) if self.enabled else (155, 155, 155)
         text_surface = self.font.render(self.text, True, text_color)
         text_rect = text_surface.get_rect(center=self.rect.center)
         screen.blit(text_surface, text_rect)
@@ -54,9 +54,50 @@ class Button:
 class Game:
     def __init__(self):
         pygame.init()
+        
+        # Initialize mixer first, before any sound loading
+        pygame.mixer.init()
+        pygame.mixer.music.set_volume(0.0)  # Start at zero volume
+        
+        # Load and set up background music first - before anything else
+        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        try:
+            self.music_tracks = [
+                os.path.join(assets_dir, 'Endless-Journey.mp3'),
+                os.path.join(assets_dir, 'Endless-Ascent.mp3')
+            ]
+            # Initialize music system
+            self.music_enabled = True
+            self.music_volume = 0.0
+            self.target_volume = 0.7
+            self.initial_fade_frames = 300  # 5 seconds at 60fps
+            self.toggle_fade_frames = 60    # 1 second at 60fps
+            self.current_fade_frame = 0
+            self.is_fading = True          
+            self.is_initial_fade = True    
+            
+            # Set up initial track
+            self.current_track = random.randint(0, len(self.music_tracks) - 1)
+            pygame.mixer.music.load(self.music_tracks[self.current_track])
+            pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
+            
+        except pygame.error as e:
+            print(f"Failed to load music: {e}")
+
+        # Remove all other music initialization code...
+        # (delete the duplicate music setup sections later in __init__)
+
+        # Rest of initialization code...
+
         self.width = 3400  # Always have full width for both hills
         self.height = 600  # Updated width to 1740px
         
+        # Initialize timer variables BEFORE loading save
+        self.start_time = None  # Initialize start time for the speedrun timer
+        self.elapsed_time = 0  # Initialize elapsed time
+        self.total_elapsed_time = 0  # Total elapsed time including previous sessions
+        self.timer_visible = True  # Add visibility flag for timer
+
         self.screen = pygame.display.set_mode(
             (800, 600),
             pygame.DOUBLEBUF | pygame.HWSURFACE,
@@ -68,34 +109,6 @@ class Game:
         # Create DrawOptions and disable collision points
         self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
         self.draw_options.flags = pymunk.SpaceDebugDrawOptions.DRAW_SHAPES  # Only draw shapes, not collision points
-
-        # Load and set up background music
-        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
-        try:
-            self.music_tracks = [
-                os.path.join(assets_dir, 'Endless-Journey.mp3'),
-                os.path.join(assets_dir, 'Endless-Ascent.mp3')
-            ]
-            # Initialize music system with random track
-            self.music_enabled = True
-            self.music_volume = 0.0
-            self.target_volume = 0.7
-            self.initial_fade_frames = 300  # 5 seconds at 60fps
-            self.toggle_fade_frames = 60    # 1 second at 60fps
-            self.current_fade_frame = 0
-            self.is_fading = True          
-            self.is_initial_fade = True    
-            
-            # Pick random starting track
-            self.current_track = 1
-            
-            # Start playing the random track
-            pygame.mixer.music.load(self.music_tracks[self.current_track])
-            pygame.mixer.music.set_volume(0.0)
-            pygame.mixer.music.play(-1)
-            
-        except pygame.error as e:
-            print(f"Failed to load music: {e}")
 
         self.space = pymunk.Space()
         self.space.gravity = (0, 900)
@@ -325,6 +338,23 @@ class Game:
         # Add save file path
         self.save_file = os.path.join(os.path.dirname(__file__), 'save_data.json')
         
+        # Load saved data first
+        saved_data = self.load_save()
+        
+        # Start music immediately
+        try:
+            pygame.mixer.music.load(self.music_tracks[self.current_track])
+            pygame.mixer.music.set_volume(0.0)  # Start at 0 volume
+            pygame.mixer.music.play(-1)  # Start playing immediately
+        except pygame.error as e:
+            print(f"Failed to load music: {e}")
+
+        # Load completion state and final time
+        self.game_completed = saved_data.get('game_completed', False)
+        self.final_time = saved_data.get('final_time', 0)
+        if self.game_completed:
+            self.elapsed_time = self.final_time  # Use final time if game was completed
+
         # Define default unlocked sizes
         default_unlocked_sizes = {
             40: True,   # Small boulder always unlocked
@@ -333,9 +363,6 @@ class Game:
             120: False, # Huge boulder starts locked
             150: False  # Golden boulder starts locked
         }
-        
-        # Load saved data first
-        saved_data = self.load_save()
         
         # Initialize values with saved data or defaults
         self.money = saved_data.get('money', 0)
@@ -375,7 +402,10 @@ class Game:
         }
 
         # Instead of spawning default boulder, spawn the last used boulder size
-        last_boulder_size = saved_data.get('last_boulder_size', 40)  # Default to small if not found
+        last_boulder_size = saved_data.get('last_boulder_size', 40)  # Default to 40 if not found or None
+        if last_boulder_size is None:  # Additional check to ensure we always have a valid size
+            last_boulder_size = 40
+            
         # Get the correct rewards for the loaded boulder size
         self.boulder_reward, self.boulder_xp_gain = self.boulder_rewards[last_boulder_size]
         self.spawn_boulder(last_boulder_size, self.boulder_reward, self.boulder_xp_gain)
@@ -399,9 +429,17 @@ class Game:
         # Initialize floating texts
         self.floating_texts = []
 
-        self.start_time = None  # Initialize start time for the speedrun timer
-        self.elapsed_time = 0  # Initialize elapsed time
-        self.total_elapsed_time = 0  # Total elapsed time including previous sessions
+        # Add congratulations screen state
+        self.showing_congrats = False
+        self.congrats_particles = []
+        self.final_time = 0
+        self.continue_button = Button(300, 400, 200, 40, "Continue Playing", self.close_congrats)
+        self.new_game_button = Button(300, 450, 200, 40, "Start New Game", self.start_new_game)
+
+        # Add main menu buttons
+        self.menu_continue_button = Button(300, 400, 200, 40, "Continue Game", self.continue_game)
+        self.menu_new_game_button = Button(300, 450, 200, 40, "New Game", self.start_new_game)
+        self.in_main_menu = True  # Track if we're in the main menu
 
     def ignore_collision(self, arbiter, space, data):
         """Collision handler that ignores the collision."""
@@ -498,7 +536,6 @@ class Game:
             pygame.draw.circle(self.screen, (255, 215, 0), 
                 (int(particle[0][0] - self.camera_x), int(particle[0][1])), 
                 int(particle[2]))
-        
         # Draw money texts with camera offset
         for text in self.money_texts:
             font = pygame.font.Font(None, text['size'])
@@ -509,19 +546,19 @@ class Game:
             self.screen.blit(text_surface, (int(screen_x), int(text['pos'][1])))
 
     def spawn_money_particles(self, amount, hill2=False):
-        # Create money text effect 40 pixels higher
+        # Create money text effect 90 pixels higher (increased from 40)
         if hill2:
             # Position for Hill 2 (centered above the hill)
             x_pos = 1980  # Center of Hill 2
-            y_pos = self.height - 420
+            y_pos = self.height - 470  # Raised by 50px (from 420)
         else:
             # Position for Hill 1 (centered above the hill)
             x_pos = 870   # Center of Hill 1
-            y_pos = self.height - 340
+            y_pos = self.height - 390  # Raised by 50px (from 340)
 
         self.money_texts.append({
             'text': f"+${amount}", 
-            'pos': [x_pos, y_pos],  # Adjusted height to be above hills
+            'pos': [x_pos, y_pos],
             'life': 1.0, 
             'size': 48
         })
@@ -622,7 +659,7 @@ class Game:
 
     def unlock_and_spawn(self, size):
         costs = {50: 10, 80: 50, 120: 200}  # Costs for boulders
-        rewards = {50: (2, 2), 80: (5, 5), 120: (10, 10)}  # Updated rewards for boulders
+        rewards = {50: (2, 2), 80: (5, 5), 120: (20, 20)}  # Updated rewards for boulders
         
         if not self.unlocked_sizes[size] and self.money >= costs[size]:
             self.money -= costs[size]
@@ -786,9 +823,15 @@ class Game:
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                self.save_progress()  # Save before quitting
+                self.save_progress()
                 return False
-            
+                
+            # Handle congratulations screen buttons if showing
+            if self.showing_congrats:
+                self.continue_button.handle_event(event)
+                self.new_game_button.handle_event(event)
+                continue  # Skip other input handling while showing congratulations
+                
             # Handle music end event
             if event.type == pygame.USEREVENT + 1:  # Music ended
                 self.next_track()
@@ -801,6 +844,14 @@ class Game:
             self.large_boulder_button.handle_event(event)
             self.huge_boulder_button.handle_event(event)
             self.golden_boulder_button.handle_event(event)
+            
+            # Handle timer click
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Check if click is in timer area
+                timer_rect = pygame.Rect(10, self.height - 62, 200, 30)  # Approximate timer area
+                if timer_rect.collidepoint(event.pos):
+                    self.timer_visible = not self.timer_visible
+                    self.save_progress()  # Save timer visibility state
             
         # ... rest of existing handle_events code ...
         # Handle continuous jumping when key is held
@@ -973,6 +1024,7 @@ class Game:
                         for size, unlocked in data['unlocked_sizes'].items()
                     }
                 self.total_elapsed_time = data.get('elapsed_time', 0)  # Load the total elapsed time
+                self.timer_visible = data.get('timer_visible', True)  # Load timer visibility state
                 return data
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
@@ -984,11 +1036,11 @@ class Game:
             current_boulder_size = int(self.current_boulder['shape'].radius)
 
         # Calculate total time before saving
-        if self.start_time:
+        if self.start_time and not self.game_completed:
             current_session_time = (pygame.time.get_ticks() - self.start_time) / 1000
             total_time = self.total_elapsed_time + current_session_time
         else:
-            total_time = self.total_elapsed_time
+            total_time = self.final_time if self.game_completed else self.total_elapsed_time
 
         save_data = {
             'money': self.money,
@@ -999,7 +1051,10 @@ class Game:
             },
             'golden_boulder_unlocked': self.unlocked_sizes[150],
             'last_boulder_size': current_boulder_size,
-            'elapsed_time': total_time  # Save the actual total time
+            'elapsed_time': total_time,
+            'timer_visible': self.timer_visible,
+            'game_completed': self.game_completed,  # Save completion state
+            'final_time': self.final_time if self.game_completed else 0  # Save final time if completed
         }
         try:
             with open(self.save_file, 'w') as f:
@@ -1016,47 +1071,117 @@ class Game:
             self.money -= 1000
             self.unlocked_sizes[150] = True  # Unlock the golden boulder
             self.golden_boulder_button.text = self.get_golden_boulder_text()  # Update button text
+            self.show_congratulations()  # Show congratulations screen
             self.save_progress()  # Save the unlock status
 
         if self.unlocked_sizes[150]:
             self.spawn_boulder(150, 50, 50)  # Spawn golden boulder with larger size and higher rewards
 
-    def spawn_boulder(self, size=40, reward=None, xp_gain=None):
-        # Check cooldown
-        if self.spawn_cooldown > 0:
-            return
-            
-        # Only check unlocks, no cost per spawn
-        if not self.unlocked_sizes[size]:
-            return
-            
-        if self.current_boulder is not None:
-            self.space.remove(self.current_boulder['body'], self.current_boulder['shape'])
-            self.current_boulder = None
-
-        # Get rewards from mapping if not specified
-        if reward is None or xp_gain is None:
-            reward, xp_gain = self.boulder_rewards[size]  # Changed from .get() to direct access
-
-        # Determine spawn position based on Sisyphus's position
-        if self.sisyphus.position.x < 900:  # Before/at hill 1 peak
-            # Spawn in front of the first hill
-            boulder_position = (480, self.height - 250 - self.offset)
-        elif self.sisyphus.position.x < 2040:  # Before/at hill 2 peak
-            # Spawn in front of the second hill
-            boulder_position = (1500, self.height - 250 - self.offset)
-        else:
-            # Spawn after the second hill, beyond its right base (2380 + some padding)
-            boulder_position = (2800, self.height - 250 - self.offset)
-
-        boulder_body, boulder_shape = self.create_boulder(size, boulder_position)
-        new_boulder = {'body': boulder_body, 'shape': boulder_shape, 'state': 'normal'}
-        self.current_boulder = new_boulder
-        self.boulder_reward = reward
-        self.boulder_xp_gain = xp_gain
+    def show_congratulations(self):
+        self.showing_congrats = True
+        self.final_time = self.elapsed_time
         
-        # Set spawn cooldown
-        self.spawn_cooldown = 10
+        # Create lots of celebration particles
+        for _ in range(500):  # Much more particles than level up
+            pos = [400, 300]  # Center of screen
+            vel = [random.uniform(-8, 8), random.uniform(-8, 8)]  # Faster particles
+            self.congrats_particles.append([pos, vel, random.randint(4, 15)])  # Larger particles
+
+    def close_congrats(self):
+        self.showing_congrats = False
+        self.congrats_particles.clear()
+        self.game_completed = True  # Mark game as completed to keep timer paused
+
+    def start_new_game(self):
+        # Delete save file if it exists
+        try:
+            if os.path.exists(self.save_file):
+                os.remove(self.save_file)
+        except Exception as e:
+            print(f"Failed to delete save file: {e}")
+
+        # Reset game state
+        self.money = 0
+        self.strength_xp = 0
+        self.strength = 36
+        self.jump_force = 3000
+        self.unlocked_sizes = {
+            40: True,   # Small boulder always unlocked
+            50: False,  # Medium boulder starts locked
+            80: False,  # Large boulder
+            120: False, # Huge boulder starts locked
+            150: False  # Golden boulder starts locked
+        }
+        self.start_time = pygame.time.get_ticks()
+        self.elapsed_time = 0
+        self.total_elapsed_time = 0
+        self.showing_congrats = False
+        self.congrats_particles.clear()
+        self.game_completed = False  # Reset completion status
+        self.final_time = 0  # Reset final time
+        
+        # Reset button texts to their default states
+        self.medium_boulder_button.text = "Medium Boulder (10$)"
+        self.large_boulder_button.text = "Large Boulder (50$)"
+        self.huge_boulder_button.text = "Huge Boulder (200$)"
+        self.golden_boulder_button.text = "Golden Boulder (1000$)"
+        
+        # Clear any existing boulders
+        self.clear_boulders()
+        
+        # Spawn initial small boulder
+        self.spawn_boulder(40, 1, 1)
+        
+        # If we're in the menu, exit it
+        self.in_main_menu = False
+
+    def draw_congratulations(self):
+        if not self.showing_congrats:
+            return
+
+        # Draw semi-transparent overlay
+        overlay = pygame.Surface((800, 600))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(128)
+        self.screen.blit(overlay, (0, 0))
+
+        # Draw celebration particles
+        for particle in self.congrats_particles[:]:
+            particle[0][0] += particle[1][0]
+            particle[0][1] += particle[1][1]
+            particle[2] -= 0.1  # Decrease size
+            if particle[2] <= 0:
+                self.congrats_particles.remove(particle)
+            else:
+                pygame.draw.circle(self.screen, (255, 215, 0), 
+                    (int(particle[0][0]), int(particle[0][1])), 
+                    int(particle[2]))
+        # Draw congratulations text
+        font = pygame.font.Font(None, 64)
+        text = font.render("Congratulations!", True, (255, 215, 0))
+        text_rect = text.get_rect(center=(400, 200))
+        self.screen.blit(text, text_rect)
+
+        # Draw completion time
+        time_font = pygame.font.Font(None, 48)
+        total_seconds = int(self.final_time)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        milliseconds = int((self.final_time % 1) * 100)
+        
+        if hours > 0:
+            time_str = f"Completion Time: {hours}:{minutes:02d}:{seconds:02d}.{milliseconds:02d}"
+        else:
+            time_str = f"Completion Time: {minutes:02d}:{seconds:02d}.{milliseconds:02d}"
+            
+        time_text = time_font.render(time_str, True, (255, 255, 255))
+        time_rect = time_text.get_rect(center=(400, 300))
+        self.screen.blit(time_text, time_rect)
+
+        # Draw buttons
+        self.continue_button.draw(self.screen)
+        self.new_game_button.draw(self.screen)
 
     def draw_boulders(self):
         # Draw boulder sprites
@@ -1095,226 +1220,86 @@ class Game:
             # Blit the rotated sprite onto the screen
             self.screen.blit(rotated_sprite, rotated_rect.topleft)
 
-    def run(self):
-        # Show splash screen first
-        if not self.show_splash_screen():
+    def draw_speedrun_timer(self):
+        if not self.timer_visible:
             return
+            
+        # Convert total seconds to hours, minutes, seconds
+        total_seconds = int(self.elapsed_time)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        milliseconds = int((self.elapsed_time % 1) * 100)
+        
+        # Format the time string
+        if hours > 0:
+            time_str = f"{hours}:{minutes:02d}:{seconds:02d}.{milliseconds:02d}"
+        else:
+            time_str = f"{minutes:02d}:{seconds:02d}.{milliseconds:02d}"
+        
+        # Draw the timer in red
+        timer_font = pygame.font.Font(None, 36)
+        timer_text = timer_font.render(f"Time: {time_str}", True, (240, 90, 0))  # Changed to red
+        self.screen.blit(timer_text, (10, self.height - 62))
 
-        # Ensure volume is 0 before starting music
+    def continue_game(self):
+        self.in_main_menu = False
+        self.start_fade_out()
+
+    def start_fade_out(self):
+        self.fade_alpha = 0  # Start fully transparent
+        self.fading_out = True
+        # Just reset volume without restarting music
         self.music_volume = 0.0
         pygame.mixer.music.set_volume(0.0)
-        
-        # Start fade-in process
-        self.fade_start_time = pygame.time.get_ticks()
-        pygame.mixer.music.play()
 
-        self.start_time = pygame.time.get_ticks()  # Start the timer when the game starts
+    def show_main_menu(self):
+        if not self.splash_screen:
+            return False
+
+        self.in_main_menu = True
         running = True
-        while running:
-            running = self.handle_events()
-            self.move_sisyphus()
-            self.update_camera()
-            self.update_particles()
+        
+        # Check if there's a save file to enable/disable continue button
+        has_save = os.path.exists(self.save_file)
+        self.menu_continue_button.enabled = has_save
+        
+        # Start music fade-in and playback
+        self.is_fading = True
+        self.is_initial_fade = True
+        self.current_fade_frame = 0
+        pygame.mixer.music.play(-1)  # Start playing only when showing menu
+        
+        while running and self.in_main_menu:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                    
+                # Handle music end event
+                if event.type == pygame.USEREVENT + 1:  # Music ended
+                    self.next_track()
+                    
+                self.menu_continue_button.handle_event(event)
+                self.menu_new_game_button.handle_event(event)
+                self.music_button.handle_event(event)
+                self.next_button.handle_event(event)
+
+            # Update music fade
             self.update_music_fade()
 
-            # Update the elapsed time
-            current_session_time = (pygame.time.get_ticks() - self.start_time) / 1000  # Convert to seconds
-            self.elapsed_time = self.total_elapsed_time + current_session_time
-
-            # Update friction for all objects when friction slider changes
-            if self.current_boulder and self.current_boulder['state'] == 'normal':
-                self.current_boulder['shape'].friction = self.friction * 0.8
-            for boulder in self.crushing_boulders:
-                boulder['shape'].friction = self.friction * 0.8
-            for wall in self.walls:
-                wall.friction = self.friction
-            for shape in self.space.shapes:
-                if isinstance(shape, pymunk.Segment) or isinstance(shape, pymunk.Poly):
-                    shape.friction = self.friction * 0.8
-
-            # Update crushing boulders
-            for boulder in self.crushing_boulders[:]:  # Iterate over a copy
-                boulder['timer'] -= 1
-                if boulder['timer'] <= 0:
-                    # Remove boulder from space and from list
-                    self.space.remove(boulder['body'], boulder['shape'])
-                    self.crushing_boulders.remove(boulder)
-
-            # Initialize hill2_top_x and hill2_top_y with default values
-            hill2_top_x = 0
-            hill2_top_y = 0
-
-            # Check if any boulder is in the detection area at the top
-            hill_top_x = 870
-            hill_top_y = self.height - 190 - self.offset
-            boulder_detected = False
-
-            # Define bottom sensor areas with explicit values
-            hill1_left_sensor_x = 600
-            hill1_right_sensor_x = 1140
-            hill2_left_sensor_x = 1600
-            hill2_right_sensor_x = 2380
-            sensor_y = self.height - 40 - self.offset
-            sensor_size = 50
-
-            if self.current_boulder and self.current_boulder['state'] == 'normal':
-                boulder = self.current_boulder['body']
-                # Check if boulder is at bottom sensors
-                if (self.boulder_at_bottom or boulder.position.x < hill1_left_sensor_x or 
-                    (boulder.position.x > hill1_right_sensor_x and boulder.position.x < hill2_left_sensor_x) or 
-                    boulder.position.x > hill2_right_sensor_x):
-                    self.boulder_at_bottom = True
-
-                # Check top sensor for Hill 1 with adjusted detection area
-                hill1_top_x = 870
-                hill1_top_y = self.height - 190 - self.offset
-                detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
-                
-                if (hill1_top_x - detection_radius < boulder.position.x < hill1_top_x + detection_radius and 
-                    hill1_top_y - detection_radius < boulder.position.y < hill1_top_y + detection_radius):
-                    boulder_detected = True
-                    reward_multiplier = 1  # Hill 1 reward multiplier
-
-                # Check top sensor for Hill 2 with adjusted detection area
-                hill2_top_x = 1990
-                hill2_top_y = self.height - 290 - self.offset
-                detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
-                
-                if (hill2_top_x - detection_radius < boulder.position.x < hill2_top_x + detection_radius and 
-                    hill2_top_y - detection_radius < boulder.position.y < hill2_top_y + detection_radius):
-                    boulder_detected = True
-                    reward_multiplier = 2  # Hill 2 reward multiplier
-
-            # Increment counter when boulder enters detection area
-            if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
-                self.hill_passes += 1
-                self.money += reward_multiplier * self.boulder_reward
-                
-                # Spawn money particles above the correct hill
-                is_hill2 = (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100)
-                self.spawn_money_particles(reward_multiplier * self.boulder_reward, hill2=is_hill2)
-                
-                # Play money pickup sound
-                if self.money_pickup_sound:
-                    self.money_pickup_sound.play()
-                
-                # Calculate XP based on boulder size with fixed values
-                if self.current_boulder:
-                    boulder_radius = self.current_boulder['shape'].radius
-                    xp_gain = {
-                        40: 1,   # Small boulder: 1 XP
-                        50: 2,   # Medium boulder: 2 XP
-                        80: 5,  # Large boulder: 5 XP
-                        120: 10  # Huge boulder: 10 XP
-                    }.get(boulder_radius, 1)
-                    
-                    old_level = self.calculate_strength_level()
-                    self.strength_xp += xp_gain
-                    new_level = self.calculate_strength_level()
-                    
-                    # Check for level up
-                    if new_level > old_level:
-                        self.level_up()
-                
-                self.boulder_at_bottom = False
+            # Draw splash screen
+            self.screen.fill((0, 0, 0))
+            self.screen.blit(self.splash_screen, (0, 0))
             
-            self.last_boulder_detected = boulder_detected
-            self.current_hill_color = self.hill_light_color if boulder_detected else self.hill_dark_color
-
-            # Update jump cooldown
-            if self.jump_cooldown > 0:
-                self.jump_cooldown -= 1
-
-            # Update spawn cooldown
-            if self.spawn_cooldown > 0:
-                self.spawn_cooldown -= 1
-                
-            # Draw cooldown text if active
-            if self.spawn_cooldown > 0:
-                cooldown_text = self.font.render(f"Spawn Cooldown: {self.spawn_cooldown//60 + 1}s", True, (200, 0, 0))
-                self.screen.blit(cooldown_text, (10, 310))
-
-            # Step the physics simulation
-            self.space.step(1/60.0)
-             
-            # Clear the screen
-            self.screen.fill((135, 206, 235))  # Fill with sky blue color
-            self.draw_clouds()  # Draw clouds
-            self.draw_particles()  # Draw particles behind the hill
-            self.draw_hill()  # Draw filled hill
-            self.draw_strength_stats()
+            # Draw menu buttons
+            self.menu_continue_button.draw(self.screen)
+            self.menu_new_game_button.draw(self.screen)
             
-            # Draw the collision hill
-            hill_points = [
-                (600, self.height - self.offset),          # Left base
-                (840, self.height - 140 - self.offset),    # Left peak
-                (900, self.height - 140 - self.offset),   # Right peak
-                (1140, self.height - self.offset)          # Right base
-            ]
-            pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill_points])
-            pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill_points], 5)
-            
-            # Draw the physics objects
-            self.draw_options.transform = pymunk.Transform(tx=-self.camera_x, ty=0)
-            self.space.debug_draw(self.draw_options)
-            
-            # Draw boulder sprites
-            self.draw_boulders()  # Call the new draw_boulders method
-
-            # Draw hill texture
-            if self.hill_texture:
-                texture_pos = (400 + self.hill_x_offset - self.camera_x, 300 + self.hill_y_offset)
-                self.screen.blit(self.hill_texture, texture_pos)
-            
-                    # Draw hill_2 texture (always)
-            if self.hill_2_texture:
-                hill_2_texture_pos = (1600 - self.camera_x, 202 + self.hill_y_offset)
-                self.screen.blit(self.hill_2_texture, hill_2_texture_pos)
-
-            # Draw grass last
-            self.draw_grass()
-
-            # Draw UI elements in this specific order
-            # Draw money (top right)
-            money_text = self.money_font.render(f"${self.money}", True, (0, 100, 0))
-            money_rect = money_text.get_rect(topright=(780, 10))
-            self.screen.blit(money_text, money_rect)
-
-            # Draw strength stats (top left)
-            self.draw_strength_stats()
-
-            # Draw boulder buttons with next potential upgrade
-            # Small boulder is always shown and enabled
-            self.small_boulder_button.visible = True
-            self.small_boulder_button.enabled = True
-            self.small_boulder_button.draw(self.screen)
-            
-            # Medium boulder
-            if self.unlocked_sizes[50] or self.money >= 10 or self.unlocked_sizes[40]:
-                self.medium_boulder_button.visible = True
-                self.medium_boulder_button.enabled = self.unlocked_sizes[50] or self.money >= 10
-                self.medium_boulder_button.draw(self.screen)
-            else:
-                self.medium_boulder_button.visible = False
-            
-            # Large boulder - Fix the conditions here
-            if self.unlocked_sizes[80] or self.unlocked_sizes[50]:  # Show if unlocked or previous size is unlocked
-                self.large_boulder_button.visible = True
-                self.large_boulder_button.enabled = self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 50)  # Fixed cost check
-                self.large_boulder_button.draw(self.screen)
-            else:
-                self.large_boulder_button.visible = False
-            
-            # Huge boulder
-            if self.unlocked_sizes[120] or self.unlocked_sizes[80]:
-                self.huge_boulder_button.visible = True
-                self.huge_boulder_button.enabled = self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 200)
-                self.huge_boulder_button.draw(self.screen)
-            else:
-                self.huge_boulder_button.visible = False
-
-            # Draw music button and icon
+            # Draw music controls
             self.music_button.draw(self.screen)
+            self.next_button.draw(self.screen)
+            
+            # Draw music icons
             if self.music_icon:
                 if self.music_enabled:
                     self.music_icon.set_alpha(255)
@@ -1322,11 +1307,8 @@ class Game:
                     self.music_icon.set_alpha(128)
                 self.screen.blit(self.music_icon, (20, 65))
             
-            # Draw next button and icon
-            self.next_button.draw(self.screen)
             if self.next_icon:
                 if self.next_button_pressed:
-                    # Create a greyed out version of the icon
                     grey_icon = self.next_icon.copy()
                     grey_surface = pygame.Surface(self.next_icon.get_size(), pygame.SRCALPHA)
                     grey_surface.fill((128, 128, 128, 128))
@@ -1340,26 +1322,310 @@ class Game:
                 self.next_button_timer -= 1
                 if self.next_button_timer <= 0:
                     self.next_button_pressed = False
+            
+            # If no save file exists, show text explaining why continue is disabled
+            if not has_save:
+                font = pygame.font.Font(None, 24)
+                text = font.render("No save file found", True, (150, 150, 150))
+                text_rect = text.get_rect(center=(400, 380))
+                self.screen.blit(text, text_rect)
 
-            # Draw Golden Boulder button
-            self.golden_boulder_button.visible = True
-            self.golden_boulder_button.enabled = self.money >= 1000 or self.unlocked_sizes[150]
-            self.golden_boulder_button.draw(self.screen)
+            pygame.display.flip()
+            self.clock.tick(60)
 
-            # Draw the speedrun timer
-            self.draw_speedrun_timer()
+        # Handle fade out
+        fade_surface = pygame.Surface((800, 600))
+        fade_surface.fill((0, 0, 0))
+        
+        for alpha in range(0, 255, 5):  # Fade out over ~3 seconds
+            self.screen.blit(self.splash_screen, (0, 0))
+            self.menu_continue_button.draw(self.screen)
+            self.menu_new_game_button.draw(self.screen)
+            self.music_button.draw(self.screen)
+            self.next_button.draw(self.screen)
+            
+            # Draw music icons during fade
+            if self.music_icon:
+                self.screen.blit(self.music_icon, (20, 65))
+            if self.next_icon:
+                self.screen.blit(self.next_icon, (60, 65))
+                
+            fade_surface.set_alpha(alpha)
+            self.screen.blit(fade_surface, (0, 0))
+            pygame.display.flip()
+            pygame.time.delay(16)  # ~60fps
+            
+        return True
+
+    def run(self):
+        # Show main menu first
+        if not self.show_main_menu():
+            return
+
+        # Game starts with music at volume 0
+        self.music_volume = 0.0
+        pygame.mixer.music.set_volume(0.0)
+        
+        # Start fade-in process
+        self.fade_start_time = pygame.time.get_ticks()
+
+        self.start_time = pygame.time.get_ticks()  # Start the timer when the game starts
+        running = True
+        while running:
+            running = self.handle_events()
+            
+            # Only update game if not showing congratulations
+            if not self.showing_congrats:
+                self.move_sisyphus()
+                self.update_camera()
+                self.update_particles()
+                self.update_music_fade()
+                
+                # Only update elapsed time if game is not completed
+                if not self.game_completed:
+                    current_session_time = (pygame.time.get_ticks() - self.start_time) / 1000
+                    self.elapsed_time = self.total_elapsed_time + current_session_time
+                
+                # Update friction for all objects when friction slider changes
+                if self.current_boulder and self.current_boulder['state'] == 'normal':
+                    self.current_boulder['shape'].friction = self.friction * 0.8
+                for boulder in self.crushing_boulders:
+                    boulder['shape'].friction = self.friction * 0.8
+                for wall in self.walls:
+                    wall.friction = self.friction
+                for shape in self.space.shapes:
+                    if isinstance(shape, pymunk.Segment) or isinstance(shape, pymunk.Poly):
+                        shape.friction = self.friction * 0.8
+
+                # Update crushing boulders
+                for boulder in self.crushing_boulders[:]:  # Iterate over a copy
+                    boulder['timer'] -= 1
+                    if boulder['timer'] <= 0:
+                        # Remove boulder from space and from list
+                        self.space.remove(boulder['body'], boulder['shape'])
+                        self.crushing_boulders.remove(boulder)
+
+                # Initialize hill2_top_x and hill2_top_y with default values
+                hill2_top_x = 0
+                hill2_top_y = 0
+
+                # Check if any boulder is in the detection area at the top
+                hill_top_x = 870
+                hill_top_y = self.height - 190 - self.offset
+                boulder_detected = False
+
+                # Define bottom sensor areas with explicit values
+                hill1_left_sensor_x = 600
+                hill1_right_sensor_x = 1140
+                hill2_left_sensor_x = 1600
+                hill2_right_sensor_x = 2380
+                sensor_y = self.height - 40 - self.offset
+                sensor_size = 50
+
+                if self.current_boulder and self.current_boulder['state'] == 'normal':
+                    boulder = self.current_boulder['body']
+                    # Check if boulder is at bottom sensors
+                    if (self.boulder_at_bottom or boulder.position.x < hill1_left_sensor_x or 
+                        (boulder.position.x > hill1_right_sensor_x and boulder.position.x < hill2_left_sensor_x) or 
+                        boulder.position.x > hill2_right_sensor_x):
+                        self.boulder_at_bottom = True
+
+                    # Check top sensor for Hill 1 with adjusted detection area
+                    hill1_top_x = 870
+                    hill1_top_y = self.height - 190 - self.offset
+                    detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
+                    
+                    if (hill1_top_x - detection_radius < boulder.position.x < hill1_top_x + detection_radius and 
+                        hill1_top_y - detection_radius < boulder.position.y < hill1_top_y + detection_radius):
+                        boulder_detected = True
+                        reward_multiplier = 1  # Hill 1 reward multiplier
+
+                    # Check top sensor for Hill 2 with adjusted detection area
+                    hill2_top_x = 1990
+                    hill2_top_y = self.height - 290 - self.offset
+                    detection_radius = max(50, self.current_boulder['shape'].radius)  # Scale detection area with boulder size
+                    
+                    if (hill2_top_x - detection_radius < boulder.position.x < hill2_top_x + detection_radius and 
+                        hill2_top_y - detection_radius < boulder.position.y < hill2_top_y + detection_radius):
+                        boulder_detected = True
+                        reward_multiplier = 2  # Hill 2 reward multiplier
+
+                # Increment counter when boulder enters detection area
+                if boulder_detected and not self.last_boulder_detected and self.boulder_at_bottom:
+                    self.hill_passes += 1
+                    self.money += reward_multiplier * self.boulder_reward
+                    
+                    # Spawn money particles above the correct hill
+                    is_hill2 = (hill2_top_x - 100 < boulder.position.x < hill2_top_x + 100)
+                    self.spawn_money_particles(reward_multiplier * self.boulder_reward, hill2=is_hill2)
+                    
+                    # Play money pickup sound
+                    if self.money_pickup_sound:
+                        self.money_pickup_sound.play()
+                    
+                    # Calculate XP based on boulder size with fixed values
+                    if self.current_boulder:
+                        boulder_radius = self.current_boulder['shape'].radius
+                        xp_gain = {
+                            40: 1,    # Small boulder: 1 XP
+                            50: 2,    # Medium boulder: 2 XP
+                            80: 5,    # Large boulder: 5 XP
+                            120: 20,  # Huge boulder: 20 XP
+                            150: 50   # Golden boulder: 50 XP
+                        }.get(boulder_radius, 1)
+                        
+                        old_level = self.calculate_strength_level()
+                        self.strength_xp += xp_gain
+                        new_level = self.calculate_strength_level()
+                        
+                        # Check for level up
+                        if new_level > old_level:
+                            self.level_up()
+                    
+                    self.boulder_at_bottom = False
+                
+                self.last_boulder_detected = boulder_detected
+                self.current_hill_color = self.hill_light_color if boulder_detected else self.hill_dark_color
+
+                # Update jump cooldown
+                if self.jump_cooldown > 0:
+                    self.jump_cooldown -= 1
+
+                # Update spawn cooldown
+                if self.spawn_cooldown > 0:
+                    self.spawn_cooldown -= 1
+                    
+                # Draw cooldown text if active
+                if self.spawn_cooldown > 0:
+                    cooldown_text = self.font.render(f"Spawn Cooldown: {self.spawn_cooldown//60 + 1}s", True, (200, 0, 0))
+                    self.screen.blit(cooldown_text, (10, 310))
+
+                # Step the physics simulation
+                self.space.step(1/60.0)
+                 
+                # Clear the screen
+                self.screen.fill((135, 206, 235))  # Fill with sky blue color
+                self.draw_clouds()  # Draw clouds
+                self.draw_particles()  # Draw particles behind the hill
+                self.draw_hill()  # Draw filled hill
+                self.draw_strength_stats()
+                
+                # Draw the collision hill
+                hill_points = [
+                    (600, self.height - self.offset),          # Left base
+                    (840, self.height - 140 - self.offset),    # Left peak
+                    (900, self.height - 140 - self.offset),   # Right peak
+                    (1140, self.height - self.offset)          # Right base
+                ]
+                pygame.draw.polygon(self.screen, (139, 69, 19), [(x - self.camera_x, y) for x, y in hill_points])
+                pygame.draw.lines(self.screen, (139, 69, 19), False, [(x - self.camera_x, y) for x, y in hill_points], 5)
+                
+                # Draw the physics objects
+                self.draw_options.transform = pymunk.Transform(tx=-self.camera_x, ty=0)
+                self.space.debug_draw(self.draw_options)
+                
+                # Draw boulder sprites
+                self.draw_boulders()  # Call the new draw_boulders method
+
+                # Draw particles and money texts after boulders
+                self.draw_particles()  # Moved here to draw on top of boulders
+
+                # Draw hill texture
+                if self.hill_texture:
+                    texture_pos = (400 + self.hill_x_offset - self.camera_x, 300 + self.hill_y_offset)
+                    self.screen.blit(self.hill_texture, texture_pos)
+                
+                # Draw hill_2 texture (always)
+                if self.hill_2_texture:
+                    hill_2_texture_pos = (1600 - self.camera_x, 202 + self.hill_y_offset)
+                    self.screen.blit(self.hill_2_texture, hill_2_texture_pos)
+
+                # Draw grass last
+                self.draw_grass()
+
+                # Draw UI elements in this specific order
+                # Draw money (top right)
+                money_text = self.money_font.render(f"${self.money}", True, (0, 100, 0))
+                money_rect = money_text.get_rect(topright=(780, 10))
+                self.screen.blit(money_text, money_rect)
+
+                # Draw strength stats (top left)
+                self.draw_strength_stats()
+
+                # Draw boulder buttons with next potential upgrade
+                # Small boulder is always shown and enabled
+                self.small_boulder_button.visible = True
+                self.small_boulder_button.enabled = True
+                self.small_boulder_button.draw(self.screen)
+                
+                # Medium boulder
+                if self.unlocked_sizes[50] or self.money >= 10 or self.unlocked_sizes[40]:
+                    self.medium_boulder_button.visible = True
+                    self.medium_boulder_button.enabled = self.unlocked_sizes[50] or self.money >= 10
+                    self.medium_boulder_button.draw(self.screen)
+                else:
+                    self.medium_boulder_button.visible = False
+                
+                # Large boulder - Fix the conditions here
+                if self.unlocked_sizes[80] or self.unlocked_sizes[50]:  # Show if unlocked or previous size is unlocked
+                    self.large_boulder_button.visible = True
+                    self.large_boulder_button.enabled = self.unlocked_sizes[80] or (self.unlocked_sizes[50] and self.money >= 50)  # Fixed cost check
+                    self.large_boulder_button.draw(self.screen)
+                else:
+                    self.large_boulder_button.visible = False
+                
+                # Huge boulder
+                if self.unlocked_sizes[120] or self.unlocked_sizes[80]:
+                    self.huge_boulder_button.visible = True
+                    self.huge_boulder_button.enabled = self.unlocked_sizes[120] or (self.unlocked_sizes[80] and self.money >= 200)
+                    self.huge_boulder_button.draw(self.screen)
+                else:
+                    self.huge_boulder_button.visible = False
+
+                # Draw music button and icon
+                self.music_button.draw(self.screen)
+                if self.music_icon:
+                    if self.music_enabled:
+                        self.music_icon.set_alpha(255)
+                    else:
+                        self.music_icon.set_alpha(128)
+                    self.screen.blit(self.music_icon, (20, 65))
+                
+                # Draw next button and icon
+                self.next_button.draw(self.screen)
+                if self.next_icon:
+                    if self.next_button_pressed:
+                        # Create a greyed out version of the icon
+                        grey_icon = self.next_icon.copy()
+                        grey_surface = pygame.Surface(self.next_icon.get_size(), pygame.SRCALPHA)
+                        grey_surface.fill((128, 128, 128, 128))
+                        grey_icon.blit(grey_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                        self.screen.blit(grey_icon, (60, 65))
+                    else:
+                        self.screen.blit(self.next_icon, (60, 65))
+                
+                # Update next button timer
+                if self.next_button_pressed:
+                    self.next_button_timer -= 1
+                    if self.next_button_timer <= 0:
+                        self.next_button_pressed = False
+
+                # Draw Golden Boulder button
+                self.golden_boulder_button.visible = True
+                self.golden_boulder_button.enabled = self.money >= 1000 or self.unlocked_sizes[150]
+                self.golden_boulder_button.draw(self.screen)
+
+                # Draw the speedrun timer
+                self.draw_speedrun_timer()
+
+            # Draw congratulations screen on top if active
+            if self.showing_congrats:
+                self.draw_congratulations()
 
             pygame.display.flip()
             self.clock.tick(60)
 
         self.save_progress()  # Save one final time before exiting
-
-    def draw_speedrun_timer(self):
-        # Draw the speedrun timer on the screen
-        timer_font = pygame.font.Font(None, 36)  # Use a larger font for the timer
-        timer_text = timer_font.render(f"Time: {self.elapsed_time:.2f}s", True, (0, 0, 0))
-        # Position it in the bottom left corner
-        self.screen.blit(timer_text, (10, self.height - 62))
 
 if __name__ == "__main__":
     game = Game()

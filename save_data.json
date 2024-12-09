@@ -1,14 +1,17 @@
 {
-  "money": 7947,
-  "strength_xp": 233,
+  "money": 0,
+  "strength_xp": 0,
   "unlocked_sizes": {
     "40": true,
-    "50": true,
-    "80": true,
-    "120": true,
-    "150": true
+    "50": false,
+    "80": false,
+    "120": false,
+    "150": false
   },
-  "golden_boulder_unlocked": true,
-  "last_boulder_size": 80,
-  "elapsed_time": 23.991
+  "golden_boulder_unlocked": false,
+  "last_boulder_size": 40,
+  "elapsed_time": 17.776999999999997,
+  "timer_visible": true,
+  "game_completed": false,
+  "final_time": 0
 }
